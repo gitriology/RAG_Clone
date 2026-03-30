@@ -1,0 +1,9 @@
+# Ignore Python cache
+/scripts/__pycache__/
+
+# Ignore data files that are large / can be regenerated
+/data/legal/raw/
+/data/legal/extracted/
+/data/legal/cleaned/
+
+Note/
