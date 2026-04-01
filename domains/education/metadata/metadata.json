@@ -1,0 +1,10 @@
+[
+    {
+        "file_name": "Education.pdf",
+        "domain": "education",
+        "source": "textbook",
+        "department": "academic",
+        "confidentiality": "low",
+        "total_chunks": 134
+    }
+]

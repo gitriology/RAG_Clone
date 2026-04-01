@@ -1,0 +1,18 @@
+[
+    {
+        "file_name": "Administrative(Employee).pdf",
+        "domain": "administrative",
+        "source": "employee_handbook",
+        "department": "HR",
+        "confidentiality": "low",
+        "total_chunks": 60
+    },
+    {
+        "file_name": "Administrative(HR_manual).pdf",
+        "domain": "administrative",
+        "source": "hr_manual",
+        "department": "HR",
+        "confidentiality": "low",
+        "total_chunks": 190
+    }
+]
