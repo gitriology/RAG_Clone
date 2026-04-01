@@ -74,7 +74,9 @@ if __name__ == "__main__":
     files = {
         "healthcare": base_path + "healthcare_chunks.json",
         "legal": base_path + "legal_chunks.json",
-        "space": base_path + "space_chunks.json"
+        "space": base_path + "space_chunks.json",
+        "admin":base_path+"administrative_all_chunks.json",
+        "education":base_path+"education_all_chunks.json"
     }
 
     clean_files = []
