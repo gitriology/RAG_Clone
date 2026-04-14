@@ -4,7 +4,7 @@ from index.faiss_index import build_faiss
 from lexical.bm25 import build_bm25, search_bm25
 from hybrid.hybrid_search import hybrid_search
 
-data = load_data("C:/Users/JASS.DESKTOP-08INHO4/Desktop/MAJOR PROJECT/data/processed/all_domains.json")
+data = load_data("/data/processed/all_domains.json")
 
 texts = [item["text"] for item in data]
 
