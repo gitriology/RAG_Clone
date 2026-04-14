@@ -1,4 +1,4 @@
-from lexical.bm25 import search_bm25
+from backend.retrieval.lexical.bm25 import search_bm25
 def hybrid_search(query, model, faiss_index, bm25, tokenized, texts, k=5):
     
     # Dense
