@@ -1,8 +1,50 @@
+import re
+
 from backend.retrieval.run_retrieval import retrieve
 from backend.reranker.model.reranker import rerank
 from backend.reranker.utils.context_selector import select_top_k
 from backend.generation.validation.context_validator import validate_context
 from backend.generation.guards.answer_validator import validate_answer
+from backend.reranker.scoring.confidence.confidence_score import compute_confidence
+
+
+def clean_text(text):
+    # Remove URLs (normal + broken ones)
+    text = re.sub(r'http\S+|www\S+', '', text)
+
+    # Fix broken spacing like "thehindu. c om"
+    text = re.sub(r'\s+\.\s+', '.', text)
+
+    # Remove excessive whitespace
+    text = re.sub(r'\s+', ' ', text)
+
+    return text.strip()
+
+
+def build_answer(docs):
+    answer_parts = []
+
+    for doc in docs:
+        text = clean_text(doc["text"])
+
+        # Split using safer boundary (not naive ".")
+        chunks = re.split(r'(?<=[.!?])\s+', text)
+
+        # Filter out garbage chunks
+        chunks = [
+            c.strip()
+            for c in chunks
+            if c.strip() and len(c.split()) > 3  # ignore tiny/noisy fragments
+        ]
+
+        if chunks:
+            # Take first 2–3 meaningful chunks
+            selected = chunks[:2]
+
+            # IMPORTANT: do NOT force "." — keep original text
+            answer_parts.extend(selected)
+
+    return " ".join(answer_parts)
 
 
 def run_pipeline(query):
@@ -18,25 +60,26 @@ def run_pipeline(query):
     # Step 4: Select top docs
     top_docs = select_top_k(validated_docs, k=3)
 
-    # Step 5: Simulated answer (LLM placeholder)
-    answer = " ".join([
-    doc["text"].split(".")[0] for doc in top_docs
-])
+    # Step 5: Build answer
+    answer = build_answer(top_docs)
 
     # Step 6: Answer validation
     validation = validate_answer(answer, top_docs)
 
+    # Step 7: Confidence scoring
+    confidence = compute_confidence(top_docs, validation)
+
     return {
         "answer": answer,
-        "documents": top_docs,
-        "validation": validation
+        "sources": top_docs,
+        "confidence": confidence
     }
 
 
 if __name__ == "__main__":
-    query = "What is vaccination?"
+    query = "Where did Chandrayaan-3 land on the Moon and which organization developed the mission?"
 
     result = run_pipeline(query)
 
     print("\nANSWER:\n", result["answer"])
-    print("\nVALIDATION:", result["validation"])
+    print("\nCONFIDENCE:", result["confidence"])
