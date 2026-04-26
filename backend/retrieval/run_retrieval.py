@@ -4,6 +4,7 @@ from backend.retrieval.index.faiss_index import build_faiss
 from backend.retrieval.lexical.bm25 import build_bm25
 from backend.retrieval.hybrid.hybrid_search import hybrid_search
 
+
 # ================================
 # LOAD DATA (ONCE)
 # ================================
@@ -61,7 +62,13 @@ if __name__ == "__main__":
 
     results = retrieve(query)
 
-    for r in results:
-        print("Domain:", r["domain"])
-        print("Score Input Text:", r["text"][:200])
-        print("-" * 50)
+    print("\n🔍 QUERY:", query)
+    print("\n📊 RESULTS:\n")
+
+    for i, doc in enumerate(results):
+        print(f"--- Result {i+1} ---")
+        print("Answer:", doc.get("text", "")[:300])
+        print("Score:", doc.get("rerank_score", 0.0))
+        print("Domain:", doc.get("domain", "unknown"))
+        print("Source:", doc.get("source", "unknown"))
+        print("-" * 60)

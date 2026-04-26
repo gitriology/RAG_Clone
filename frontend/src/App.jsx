@@ -1,64 +1,58 @@
-import { useState } from "react";
-import axios from "axios";
+import { useState, useEffect, useRef } from "react";
+import ChatWindow from "./components/ChatWindow";
+import InputBox from "./components/InputBox";
+import Header from "./components/Header";
+import { sendQuery } from "./services/api";
 
 function App() {
-  const [query, setQuery] = useState("");
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([]);
+  const chatEndRef = useRef(null);
 
-  const handleSearch = async () => {
-    if (!query) return;
+  // Auto-scroll
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-    setLoading(true);
+  const sendMessage = async () => {
+    if (!input.trim()) return;
+
+    const userMsg = { type: "user", text: input };
+    const loadingMsg = { type: "bot", text: "Typing..." };
+
+    setMessages((prev) => [...prev, userMsg, loadingMsg]);
+
     try {
-      const res = await axios.post("http://127.0.0.1:8000/api/query", {
-        query: query,
+      const data = await sendQuery(input);
+
+      const botMsg = {
+        type: "bot",
+        text: data.answer,
+        confidence: data.confidence,
+        sources: data.sources,
+      };
+
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated.pop(); // remove typing
+        updated.push(botMsg);
+        return updated;
       });
-      setResult(res.data);
-    } catch (err) {
-      console.error(err);
-      alert("Error fetching response");
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { type: "bot", text: "Error connecting to backend." },
+      ]);
     }
-    setLoading(false);
+
+    setInput("");
   };
 
   return (
-    <div style={{ padding: "30px", fontFamily: "Arial" }}>
-      <h1>🚀 Domain-Adaptive RAG Chatbot</h1>
-
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Ask something..."
-        style={{ width: "60%", padding: "10px" }}
-      />
-
-      <button onClick={handleSearch} style={{ marginLeft: "10px" }}>
-        Search
-      </button>
-
-      {loading && <p>⏳ Processing...</p>}
-
-      {result && (
-        <div style={{ marginTop: "20px" }}>
-          <h3>🧠 Answer:</h3>
-          <p>{result.answer}</p>
-
-          <h4>📊 Confidence:</h4>
-          <p>{result.confidence}</p>
-
-          <h4>📂 Detected Domain:</h4>
-          <p>{result.meta?.detected_domain}</p>
-
-          <h4>📚 Sources:</h4>
-          {result.sources.map((s, i) => (
-            <div key={i} style={{ marginBottom: "10px" }}>
-              <b>{s.domain}</b> | {s.source}
-              <p>{s.text.substring(0, 150)}...</p>
-            </div>
-          ))}
-        </div>
-      )}
+    <div className="flex flex-col h-screen bg-gray-100">
+      <Header />
+      <ChatWindow messages={messages} chatEndRef={chatEndRef} />
+      <InputBox input={input} setInput={setInput} sendMessage={sendMessage} />
     </div>
   );
 }

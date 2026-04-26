@@ -69,17 +69,29 @@ def run_pipeline(query):
     # Step 7: Confidence scoring
     confidence = compute_confidence(top_docs, validation)
 
-    return {
-        "answer": answer,
-        "sources": top_docs,
-        "confidence": confidence
-    }
+    # ✅ NEW: format output for API
+    formatted_results = []
 
+    for doc in top_docs:
+        formatted_results.append({
+            "text": answer,  # final generated answer
+            "rerank_score": float(doc.get("rerank_score", 0.0)),
+            "domain": doc.get("domain", "general"),
+            "source": doc.get("source", "unknown")
+        })
+
+    return formatted_results
 
 if __name__ == "__main__":
     query = "Where did Chandrayaan-3 land on the Moon and which organization developed the mission?"
 
     result = run_pipeline(query)
 
-    print("\nANSWER:\n", result["answer"])
-    print("\nCONFIDENCE:", result["confidence"])
+    print("\nRESULT:\n")
+
+    for i, doc in enumerate(result):
+        print(f"\n--- Document {i+1} ---")
+        print("Answer:", doc["text"])
+        print("Score:", doc["rerank_score"])
+        print("Domain:", doc["domain"])
+        print("Source:", doc["source"])
