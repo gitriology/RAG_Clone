@@ -25,10 +25,16 @@ function App() {
     try {
       const data = await sendQuery(input);
 
+      const trimmedAnswer =
+        data.answer
+          ?.split(". ")
+          .slice(0,2)
+          .join(". ") + ".";
+
       const botMsg = {
         type: "bot",
-        text: data.answer,
-        confidence: data.confidence,
+        text: trimmedAnswer,
+        confidence: Math.abs(data.confidence)/10,
         sources: data.sources,
       };
 
@@ -41,7 +47,7 @@ function App() {
     } catch {
       setMessages((prev) => [
         ...prev,
-        { type: "bot", text: "Error connecting to backend." },
+        { type: "bot", text: "Answer not present in knowledge base." },
       ]);
     }
 

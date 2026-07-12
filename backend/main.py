@@ -62,7 +62,6 @@ def query_rag(request: QueryRequest):
         "answer": top.get("text", ""),
         "confidence": float(top.get("rerank_score", 0.0)),
         "domain": top.get("domain", "general"),
-
         "sources": [
             doc.get("source", "unknown") for doc in results
         ],
