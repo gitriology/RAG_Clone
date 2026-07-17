@@ -7,7 +7,7 @@ from backend.generation.guards.answer_validator import validate_answer
 
 def run_pipeline(query):
     # Step 1: Retrieval
-    retrieved_docs = retrieve(query, top_k=5)
+    retrieved_docs = retrieve(query)
 
     # Step 2: Reranking
     ranked_docs = rerank(query, retrieved_docs)

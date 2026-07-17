@@ -1,53 +1,20 @@
-import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
-def calculate_confidence(scores):
-    """
-    Calculates retrieval confidence from similarity scores.
+def retrieval_confidence(query, retrieved_docs):
 
-    Parameters
-    ----------
-    scores : list
-        Similarity scores returned by retrieval.
+    query_embedding = model.encode([query])
 
-    Returns
-    -------
-    dict
-    """
+    doc_embeddings = model.encode(
+        [doc["text"] for doc in retrieved_docs]
+    )
 
-    if len(scores) == 0:
-        return {
-            "confidence": 0.0,
-            "status": "Low"
-        }
+    scores = cosine_similarity(
+        query_embedding,
+        doc_embeddings
+    )[0]
 
-    confidence = float(np.mean(scores))
-
-    if confidence >= 0.80:
-        status = "High"
-
-    elif confidence >= 0.60:
-        status = "Medium"
-
-    else:
-        status = "Low"
-
-    return {
-        "confidence": round(confidence, 3),
-        "status": status
-    }
-
-
-if __name__ == "__main__":
-
-    retrieval_scores = [
-        0.91,
-        0.87,
-        0.84,
-        0.81,
-        0.76
-    ]
-
-    result = calculate_confidence(retrieval_scores)
-
-    print(result)
+    return max(scores)
