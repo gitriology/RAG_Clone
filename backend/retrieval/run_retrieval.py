@@ -7,7 +7,6 @@ from backend.retrieval.index.faiss_index import build_faiss
 from backend.retrieval.lexical.bm25 import build_bm25
 from backend.retrieval.hybrid.hybrid_search import hybrid_search
 
-
 # ==============================
 # Optimization Modules
 # ==============================
@@ -209,7 +208,11 @@ def retrieve(query):
 
     print("=" * 70)
 
-    return retrieved_docs
+    return {
+    "documents": retrieved_docs,
+    "retrieval_confidence": confidence,
+    "evidence": evidence
+    }
 
 
 # ==========================================================

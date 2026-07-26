@@ -49,7 +49,15 @@ def build_answer(docs):
 
 def run_pipeline(query):
     # Step 1: Retrieval
-    retrieved_docs = retrieve(query)
+    retrieval_result = retrieve(query)
+
+    retrieved_docs = retrieval_result["documents"]
+
+    retrieval_confidence = retrieval_result[
+        "retrieval_confidence"
+    ]
+
+    evidence = retrieval_result["evidence"]
 
     # Step 2: Reranking
     ranked_docs = rerank(query, retrieved_docs)
@@ -59,6 +67,8 @@ def run_pipeline(query):
 
     # Step 4: Select top docs
     top_docs = select_top_k(validated_docs, k=3)
+    if not top_docs:
+        return []
 
     # Step 5: Build answer
     answer = build_answer(top_docs)
@@ -67,17 +77,67 @@ def run_pipeline(query):
     validation = validate_answer(answer, top_docs)
 
     # Step 7: Confidence scoring
-    confidence = compute_confidence(top_docs, validation)
+    confidence = compute_confidence(
+        documents=top_docs,
+        validation=validation,
+        retrieval_confidence=retrieval_confidence
+    )
+    MIN_CONFIDENCE = 0.40
+
+    if confidence < MIN_CONFIDENCE:
+        print("Low overall confidence.")
+
+        return []
 
     # ✅ NEW: format output for API
     formatted_results = []
 
     for doc in top_docs:
+
         formatted_results.append({
-            "text": answer,  # final generated answer
-            "rerank_score": float(doc.get("rerank_score", 0.0)),
-            "domain": doc.get("domain", "general"),
-            "source": doc.get("source", "unknown")
+
+            # Final generated answer
+            "text": answer,
+
+            # Scores
+            "rerank_score": float(
+                doc.get("rerank_score", 0.0)
+            ),
+
+            "context_score": float(
+                doc.get("context_score", 0.0)
+            ),
+
+            "pipeline_confidence": float(
+                confidence
+            ),
+
+            "retrieval_confidence": float(
+                retrieval_confidence
+            ),
+
+            "answer_confidence": float(
+                validation["confidence"]
+            ),
+
+            # Validation
+            "answer_valid": validation[
+                "is_valid"
+            ],
+
+            # Metadata
+            "domain": doc.get(
+                "domain",
+                "general"
+            ),
+
+            "source": doc.get(
+                "source",
+                "unknown"
+            ),
+
+            "evidence": evidence
+
         })
 
     return formatted_results

@@ -1,7 +1,9 @@
 import numpy as np
+from pathlib import Path
 
 from backend.retrieval.utils.load_data import load_data
 from backend.retrieval.dense.embedder import get_embeddings
+
 
 print("Loading dataset...")
 
@@ -13,8 +15,10 @@ print("Generating embeddings...")
 
 embeddings = get_embeddings(texts)
 
+cache_dir = Path("backend/optimization/cache")
+cache_dir.mkdir(parents=True, exist_ok=True)
 np.save(
-    "backend/optimization/cache/embeddings.npy",
+    cache_dir / "embeddings.npy",
     embeddings
 )
 
