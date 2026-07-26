@@ -1,4 +1,17 @@
+# Python
 __pycache__/
 *.pyc
-/data/raw/
+
+# Embeddings
+backend/optimization/cache/
+
+# Retrieval cache
+backend/retrieval/cache/
+
+# FAISS
+*.index
+
+# VS Code
+.vscode/
+
 node_modules/
