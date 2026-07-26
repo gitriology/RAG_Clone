@@ -6,10 +6,7 @@ def hybrid_search(query, model, faiss_index, bm25, tokenized, texts, k=10):
     """
     Hybrid Retrieval using weighted score fusion.
     """
-
-    # ==================================================
     # Dense Retrieval
-    # ==================================================
 
     query_embedding = model.encode([query])
 
@@ -50,11 +47,11 @@ def hybrid_search(query, model, faiss_index, bm25, tokenized, texts, k=10):
         )
     else:
         bm25_top_scores = np.ones_like(bm25_top_scores)
-
-    # ==================================================
+        
     # Hybrid Fusion
-    # ==================================================
 
+    dense_dict = {}
+    bm25_dict = {}
     hybrid_scores = {}
 
     # Dense contributes 60%

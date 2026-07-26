@@ -1,20 +1,18 @@
 """
 Pipeline entry point for MS-ARC.
-
-Each module updates the RetrievalState object.
 """
 
-from ms_arc.state.retrieval_state import RetrievalState
+from ms_arc.state.retreival_state import RetrievalState
+
+from ms_arc.complexity.analyzer import QueryComplexityAnalyzer
 
 
 def run_msarc(query: str) -> RetrievalState:
-    """
-    Main MS-ARC pipeline.
-
-    The implementation will be completed gradually as each module
-    is developed.
-    """
 
     state = RetrievalState(query=query)
+
+    analyzer = QueryComplexityAnalyzer()
+
+    state = analyzer.analyze(state)
 
     return state
