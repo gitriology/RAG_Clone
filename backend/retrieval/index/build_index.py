@@ -1,36 +1,40 @@
-import os
-import numpy as np
 import faiss
+from pathlib import Path
 
-from backend.retrieval.utils.load_data import load_data
-from backend.retrieval.dense.embedder import get_embeddings
+from backend.retrieval.utils.load_embeddings import load_embeddings
+from backend.retrieval.index.faiss_index import build_faiss
 
-print("Loading Dataset...")
 
-data = load_data("data/processed/all_domains.json")
+def main():
 
-texts = [d["text"] for d in data]
+    print("[FAISS] Loading embeddings...")
 
-print("Generating Embeddings...")
+    embeddings = load_embeddings()
 
-embeddings = get_embeddings(texts)
+    print("[FAISS] Building index...")
 
-os.makedirs("backend/retrieval/cache", exist_ok=True)
+    index = build_faiss(embeddings)
 
-np.save(
-    "backend/retrieval/cache/embeddings.npy",
-    embeddings
-)
+    output = Path(
+        "backend/retrieval/index/faiss.index"
+    )
 
-dimension = embeddings.shape[1]
+    output.parent.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
-index = faiss.IndexFlatL2(dimension)
+    faiss.write_index(
+        index,
+        str(output)
+    )
 
-index.add(embeddings)
+    print()
 
-faiss.write_index(
-    index,
-    "backend/retrieval/cache/faiss.index"
-)
+    print("[FAISS] Index saved successfully")
 
-print("Index Saved Successfully")
+    print(output)
+
+
+if __name__ == "__main__":
+    main()

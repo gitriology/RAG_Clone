@@ -2,7 +2,7 @@
 Pipeline entry point for MS-ARC.
 """
 
-from ms_arc.state.retreival_state import RetrievalState
+from backend.ms_arc.state.retrieval_state import RetrievalState
 
 from ms_arc.complexity.analyzer import QueryComplexityAnalyzer
 

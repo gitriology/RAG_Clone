@@ -3,7 +3,7 @@ from typing import List
 
 import spacy
 
-from ms_arc.state.retreival_state import RetrievalState
+from backend.ms_arc.state.retrieval_state import RetrievalState
 from ms_arc.utils.helpers import normalize
 
 # Load spaCy model once

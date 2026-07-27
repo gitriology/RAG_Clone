@@ -1,81 +1,204 @@
-from backend.retrieval.lexical.bm25 import search_bm25
 import numpy as np
 
+from backend.retrieval.dense.embedder import encode_query
 
-def hybrid_search(query, model, faiss_index, bm25, tokenized, texts, k=10):
+
+def _normalize(scores):
     """
-    Hybrid Retrieval using weighted score fusion.
+    Normalize scores to [0,1]
     """
+
+    scores = np.asarray(scores, dtype=np.float32)
+
+    if len(scores) == 0:
+        return scores
+
+    minimum = np.min(scores)
+    maximum = np.max(scores)
+
+    if maximum == minimum:
+        return np.ones_like(scores)
+
+    return (scores - minimum) / (maximum - minimum)
+
+
+def hybrid_search(
+    query,
+    faiss_index,
+    bm25,
+    texts,
+    k=10,
+    dense_weight=0.6,
+    sparse_weight=0.4,
+):
+    """
+    Hybrid Retrieval
+
+    Returns
+
+    {
+        "dense_results": [...candidate pool...],
+        "sparse_results": [...candidate pool...],
+        "merged_results": [...top-k...]
+    }
+    """
+
+    # =====================================================
+    # Retrieve a larger candidate pool
+    # =====================================================
+
+    candidate_k = max(k * 4, 20)
+
+    # =====================================================
     # Dense Retrieval
+    # =====================================================
 
-    query_embedding = model.encode([query])
+    query_embedding = encode_query(query)
 
-    dense_scores, dense_ids = faiss_index.search(query_embedding, k)
-
-    dense_scores = dense_scores[0]
-    dense_ids = dense_ids[0]
-
-    # Convert FAISS distance → similarity
-    dense_similarity = 1 / (1 + dense_scores)
-
-    # Normalize Dense Scores
-    if np.max(dense_similarity) != np.min(dense_similarity):
-        dense_similarity = (
-            dense_similarity - np.min(dense_similarity)
-        ) / (
-            np.max(dense_similarity) - np.min(dense_similarity)
-        )
-    else:
-        dense_similarity = np.ones_like(dense_similarity)
-
-    # ==================================================
-    # BM25 Retrieval
-    # ==================================================
-
-    bm25_scores = bm25.get_scores(query.lower().split())
-
-    bm25_ids = np.argsort(bm25_scores)[::-1][:k]
-
-    bm25_top_scores = bm25_scores[bm25_ids]
-
-    # Normalize BM25 Scores
-    if np.max(bm25_top_scores) != np.min(bm25_top_scores):
-        bm25_top_scores = (
-            bm25_top_scores - np.min(bm25_top_scores)
-        ) / (
-            np.max(bm25_top_scores) - np.min(bm25_top_scores)
-        )
-    else:
-        bm25_top_scores = np.ones_like(bm25_top_scores)
-        
-    # Hybrid Fusion
-
-    dense_dict = {}
-    bm25_dict = {}
-    hybrid_scores = {}
-
-    # Dense contributes 60%
-    for doc_id, score in zip(dense_ids, dense_similarity):
-        hybrid_scores[doc_id] = 0.6 * float(score)
-
-    # BM25 contributes 40%
-    for doc_id, score in zip(bm25_ids, bm25_top_scores):
-
-        if doc_id in hybrid_scores:
-            hybrid_scores[doc_id] += 0.4 * float(score)
-        else:
-            hybrid_scores[doc_id] = 0.4 * float(score)
-
-    # ==================================================
-    # Ranking
-    # ==================================================
-
-    ranked = sorted(
-        hybrid_scores.items(),
-        key=lambda x: x[1],
-        reverse=True
+    dense_scores, dense_ids = faiss_index.search(
+        query_embedding,
+        candidate_k
     )
 
-    ranked_ids = [doc_id for doc_id, _ in ranked[:k]]
+    dense_scores = _normalize(dense_scores[0])
+    dense_ids = dense_ids[0]
 
-    return [texts[i] for i in ranked_ids]
+    dense_results = []
+    dense_lookup = {}
+
+    for doc_id, score in zip(dense_ids, dense_scores):
+
+        doc = {
+
+            "doc_id": int(doc_id),
+
+            "text": texts[int(doc_id)],
+
+            "dense_score": float(score),
+
+            "bm25_score": 0.0,
+
+            "hybrid_score": 0.0
+
+        }
+
+        dense_results.append(doc)
+
+        dense_lookup[int(doc_id)] = doc
+
+    # =====================================================
+    # Sparse Retrieval
+    # =====================================================
+
+    bm25_scores = bm25.get_scores(
+        query.lower().split()
+    )
+
+    bm25_ids = np.argsort(
+        bm25_scores
+    )[::-1][:candidate_k]
+
+    bm25_top_scores = _normalize(
+        bm25_scores[bm25_ids]
+    )
+
+    sparse_results = []
+    sparse_lookup = {}
+
+    for doc_id, score in zip(
+        bm25_ids,
+        bm25_top_scores
+    ):
+
+        doc = {
+
+            "doc_id": int(doc_id),
+
+            "text": texts[int(doc_id)],
+
+            "dense_score": 0.0,
+
+            "bm25_score": float(score),
+
+            "hybrid_score": 0.0
+
+        }
+
+        sparse_results.append(doc)
+
+        sparse_lookup[int(doc_id)] = doc
+
+    # =====================================================
+    # Hybrid Fusion
+    # =====================================================
+
+    merged_lookup = {}
+
+    all_doc_ids = set(dense_lookup.keys())
+
+    all_doc_ids.update(
+        sparse_lookup.keys()
+    )
+
+    for doc_id in all_doc_ids:
+
+        dense_score = dense_lookup.get(
+            doc_id,
+            {}
+        ).get(
+            "dense_score",
+            0.0
+        )
+
+        sparse_score = sparse_lookup.get(
+            doc_id,
+            {}
+        ).get(
+            "bm25_score",
+            0.0
+        )
+
+        hybrid_score = (
+
+            dense_weight * dense_score +
+
+            sparse_weight * sparse_score
+
+        )
+
+        merged_lookup[doc_id] = {
+
+            "doc_id": doc_id,
+
+            "text": texts[doc_id],
+
+            "dense_score": dense_score,
+
+            "bm25_score": sparse_score,
+
+            "hybrid_score": hybrid_score
+
+        }
+
+    merged_results = sorted(
+
+        merged_lookup.values(),
+
+        key=lambda x: x["hybrid_score"],
+
+        reverse=True
+
+    )
+
+    # Only return final Top-K after fusion
+    merged_results = merged_results[:k]
+
+    return {
+
+        "dense_results": dense_results,
+
+        "sparse_results": sparse_results,
+
+        "merged_results": merged_results
+
+    }

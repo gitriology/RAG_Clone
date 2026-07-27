@@ -122,11 +122,16 @@ def retrieve(query):
             k=top_k
         )
 
-        retrieved_docs = [
-            text_to_doc[r]
-            for r in results
-            if r in text_to_doc
-        ]
+        retrieved_docs = []
+
+        for result in results:
+
+            doc = text_to_doc[result["text"]].copy()
+
+            doc["hybrid_score"] = result["hybrid_score"]
+            doc["retrieval_id"] = result["id"]
+
+            retrieved_docs.append(doc)
 
         # -----------------------------------------
         # STEP 3 : Confidence
