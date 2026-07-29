@@ -6,6 +6,7 @@ from backend.reranker.utils.context_selector import select_top_k
 from backend.generation.validation.context_validator import validate_context
 from backend.generation.guards.answer_validator import validate_answer
 from backend.reranker.scoring.confidence.confidence_score import compute_confidence
+from backend.optimization.confidence_margin import confidence_margin
 
 
 def clean_text(text):
@@ -53,6 +54,8 @@ def run_pipeline(query):
 
     # Step 2: Reranking
     ranked_docs = rerank(query, retrieved_docs)
+    margin = confidence_margin(ranked_docs)
+    print(f"\nCross-Encoder Confidence Margin : {margin:.3f}")
 
     # Step 3: Context validation
     validated_docs = validate_context(query, ranked_docs)

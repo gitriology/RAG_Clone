@@ -81,4 +81,8 @@ def hybrid_search(query, model, faiss_index, bm25, tokenized, texts, k=10):
 
     ranked_ids = [doc_id for doc_id, _ in ranked[:k]]
 
-    return [texts[i] for i in ranked_ids]
+    return (
+    [texts[i] for i in ranked_ids],
+    list(dense_ids),
+    list(bm25_ids)
+    )
