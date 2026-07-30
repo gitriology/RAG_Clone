@@ -4,7 +4,7 @@ from typing import List
 import spacy
 
 from backend.ms_arc.state.retrieval_state import RetrievalState
-from ms_arc.utils.helpers import normalize
+from backend.ms_arc.utils.helpers import normalize
 
 # Load spaCy model once
 nlp = spacy.load("en_core_web_sm")
