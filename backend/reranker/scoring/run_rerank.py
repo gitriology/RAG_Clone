@@ -52,6 +52,7 @@ def run_pipeline(query):
     retrieval_result = retrieve(query)
 
     retrieved_docs = retrieval_result["documents"]
+    print("Retrieved Docs:", len(retrieved_docs))
 
     retrieval_confidence = retrieval_result[
         "retrieval_confidence"
@@ -61,14 +62,17 @@ def run_pipeline(query):
 
     # Step 2: Reranking
     ranked_docs = rerank(query, retrieved_docs)
+    print("Ranked Docs:", len(ranked_docs))
 
     # Step 3: Context validation
     validated_docs = validate_context(query, ranked_docs)
+    print("Validated Docs:", len(validated_docs))
 
     # Step 4: Select top docs
     top_docs = select_top_k(validated_docs, k=3)
     if not top_docs:
         return []
+    print("Top Docs:", len(top_docs))
 
     # Step 5: Build answer
     answer = build_answer(top_docs)
@@ -82,6 +86,9 @@ def run_pipeline(query):
         validation=validation,
         retrieval_confidence=retrieval_confidence
     )
+    print("Pipeline Confidence:", confidence)
+    print("Retrieval Confidence:", retrieval_confidence)
+    print("Validation:", validation)
     MIN_CONFIDENCE = 0.40
 
     if confidence < MIN_CONFIDENCE:
