@@ -92,3 +92,9 @@ class RetrievalState:
     routing_confidence: float = 0.0
 
     decision: str = ""
+
+    # ======================================================
+    # DEBUG INFORMATION
+    # ======================================================
+
+    debug: Dict = field(default_factory=dict)

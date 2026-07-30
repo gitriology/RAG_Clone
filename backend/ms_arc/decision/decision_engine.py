@@ -122,5 +122,7 @@ def compute_decision(
         stability_weight=stability_weight,
 
     )
+    state.retrieval_confidence = confidence
+    state.decision = decision
 
     return state
