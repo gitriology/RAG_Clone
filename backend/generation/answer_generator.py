@@ -144,26 +144,26 @@ def score_sentences(query, sentences):
 
 
 # ==========================================================
-# BUILD ANSWER
+# GENERATE ANSWER
 # ==========================================================
 
 def generate_answer(
     query,
     documents,
-    max_sentences=3
+    max_sentences=3,
 ):
     """
-    Parameters
-    ----------
-    query : str
+    Phase 10.1
 
-    documents : list
-        Output of reranker.
+    Performs semantic sentence selection using BGE embeddings.
 
-    Returns
-    -------
-    str
+    Returns a structured object for downstream
+    Evidence Fusion (Phase 10.2).
     """
+
+    # ------------------------------------------------------
+    # Collect candidate sentences
+    # ------------------------------------------------------
 
     all_sentences = []
 
@@ -172,56 +172,128 @@ def generate_answer(
         all_sentences.extend(
 
             split_sentences(
-
                 doc["text"]
-
             )
 
         )
 
+    # ------------------------------------------------------
+    # Remove duplicates
+    # ------------------------------------------------------
+
     all_sentences = remove_duplicates(
         all_sentences
     )
+
+    # ------------------------------------------------------
+    # Semantic ranking
+    # ------------------------------------------------------
 
     scored = score_sentences(
         query,
         all_sentences
     )
 
-    selected = [
+    # ------------------------------------------------------
+    # Select Top-N
+    # ------------------------------------------------------
+
+    selected = scored[:max_sentences]
+
+    answer = " ".join(
 
         sentence
 
-        for sentence, score in scored[:max_sentences]
+        for sentence, _ in selected
 
-    ]
+    ).strip()
 
-    answer = " ".join(selected)
-
-    answer = answer.strip()
-
-    if not answer.endswith("."):
+    if answer and not answer.endswith("."):
 
         answer += "."
+
+    # ------------------------------------------------------
+    # Structured Evidence
+    # ------------------------------------------------------
+
+    evidence = []
+
+    for rank, (sentence, score) in enumerate(
+        selected,
+        start=1,
+    ):
+
+        evidence.append(
+
+            {
+
+                "rank": rank,
+
+                "text": sentence,
+
+                "similarity": round(
+                    float(score),
+                    4,
+                ),
+
+            }
+
+        )
+
+    # ------------------------------------------------------
+    # Debug
+    # ------------------------------------------------------
 
     print()
 
     print("=" * 60)
 
-    print("Answer Generator")
+    print("Phase 10.1 : Semantic Sentence Selection")
 
     print("=" * 60)
 
-    print(f"Candidate Sentences : {len(all_sentences)}")
+    print(
+        f"Candidate Sentences : {len(all_sentences)}"
+    )
 
-    print(f"Selected Sentences  : {len(selected)}")
+    print(
+        f"Selected Sentences  : {len(evidence)}"
+    )
 
-    if scored:
+    if evidence:
 
         print(
-            f"Best Similarity     : {scored[0][1]:.4f}"
+            f"Best Similarity     : {evidence[0]['similarity']:.4f}"
         )
 
     print("=" * 60)
 
-    return answer
+    # ------------------------------------------------------
+    # Return Structured Object
+    # ------------------------------------------------------
+
+    return {
+
+        "answer": answer,
+
+        "selected_sentences": evidence,
+
+        "candidate_sentences": len(
+            all_sentences
+        ),
+
+        "selected_count": len(
+            evidence
+        ),
+
+        "best_similarity": (
+
+            evidence[0]["similarity"]
+
+            if evidence
+
+            else 0.0
+
+        ),
+
+    }

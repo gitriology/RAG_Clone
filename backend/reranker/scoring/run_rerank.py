@@ -5,6 +5,7 @@ from backend.reranker.utils.context_selector import select_top_k
 from backend.generation.validation.context_validator import validate_context
 from backend.generation.guards.answer_validator import validate_answer
 from backend.generation.answer_generator import generate_answer
+from backend.generation.evidence_fusion import EvidenceFusion
 
 from backend.reranker.scoring.confidence.confidence_score import (
     compute_confidence,
@@ -73,10 +74,20 @@ def run_pipeline(query):
     # Step 5 : Generate Answer
     # ------------------------------------------------------
 
-    answer = generate_answer(
+    generation = generate_answer(
         query=query,
         documents=top_docs,
     )
+
+    fusion = EvidenceFusion()
+
+    fusion_result = fusion.fuse(
+        generation
+    )
+
+    paragraph = fusion_result["paragraph"]
+
+    answer = paragraph
 
     # ------------------------------------------------------
     # Step 6 : Validate Answer
