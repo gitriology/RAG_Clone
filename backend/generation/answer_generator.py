@@ -25,7 +25,7 @@ import re
 import numpy as np
 from sentence_transformers import util
 
-from backend.retrieval.dense.embedder import model
+from backend.models.model_registry import ModelRegistry
 
 
 # ==========================================================
@@ -96,6 +96,8 @@ def score_sentences(query, sentences):
 
         return []
 
+    model = ModelRegistry.get_embedding_model()
+
     query_embedding = model.encode(
         query,
         convert_to_tensor=True,
@@ -141,7 +143,6 @@ def score_sentences(query, sentences):
     )
 
     return scored
-
 
 # ==========================================================
 # GENERATE ANSWER

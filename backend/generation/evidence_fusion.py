@@ -29,17 +29,16 @@ Evidence Paragraph
 from typing import List, Dict
 from collections import defaultdict
 
-import spacy
-
 from sentence_transformers import util
-import torch
 
-from backend.retrieval.dense.embedder import model
-# ----------------------------------------------------------
+from backend.models.model_registry import ModelRegistry
+
+
+# ==========================================================
 # spaCy model
-# ----------------------------------------------------------
+# ==========================================================
 
-nlp = spacy.load("en_core_web_sm")
+nlp = ModelRegistry.get_nlp()
 
 
 class EvidenceFusion:
@@ -50,32 +49,32 @@ class EvidenceFusion:
 
     Input
     -----
+
     generate_answer()
 
     {
         "answer": "...",
 
-        "selected_sentences":[
+        "selected_sentences": [
             {
-                "rank":1,
-                "text":"...",
-                "similarity":0.91
+                "rank": 1,
+                "text": "...",
+                "similarity": 0.91
             }
         ]
     }
 
     Output
     ------
+
     {
+        "paragraph": "...",
 
-        "paragraph":"...",
+        "graph": ...,
 
-        "graph":...,
+        "entities": ...,
 
-        "entities":...,
-
-        "sentence_count":...
-
+        "sentence_count": ...
     }
     """
 
@@ -89,7 +88,13 @@ class EvidenceFusion:
 
         self.entities = defaultdict(list)
 
-        self.embedder = model
+        # --------------------------------------------------
+        # IMPORTANT:
+        # Use the centralized embedding model.
+        # Do NOT import a global "model" from embedder.py.
+        # --------------------------------------------------
+
+        self.embedder = ModelRegistry.get_embedding_model()
 
     # ======================================================
     # PUBLIC ENTRY
@@ -120,26 +125,47 @@ class EvidenceFusion:
             f"Input Sentences : {len(selected)}"
         )
 
-        # ---------------------------------------------
+        # --------------------------------------------------
         # Step 1
-        # ---------------------------------------------
+        # Sentence Graph
+        # --------------------------------------------------
 
         graph = self._build_sentence_graph(
             selected
         )
 
+        # --------------------------------------------------
+        # Step 2
+        # Entity Groups
+        # --------------------------------------------------
+
         groups = self._merge_entities(
             graph
         )
+
+        # --------------------------------------------------
+        # Step 3
+        # Remove Redundancy
+        # --------------------------------------------------
 
         groups = self._remove_redundancy(
             groups
         )
 
+        # --------------------------------------------------
+        # Step 4
+        # Order Sentences
+        # --------------------------------------------------
+
         ordered = self._order_sentences(
             groups,
             graph,
         )
+
+        # --------------------------------------------------
+        # Step 5
+        # Build Paragraph
+        # --------------------------------------------------
 
         paragraph = self._build_paragraph(
             ordered
@@ -181,22 +207,24 @@ class EvidenceFusion:
 
         Every sentence becomes one node.
 
-        Nodes contain
+        Nodes contain:
 
         • sentence
         • similarity
         • named entities
         • outgoing links
 
-        Edges are added whenever two sentences
-        share at least one named entity.
+        Edges are added using:
+
+        • entity overlap
+        • semantic similarity
         """
 
         nodes = []
 
-        # ---------------------------------------------
+        # --------------------------------------------------
         # Create nodes
-        # ---------------------------------------------
+        # --------------------------------------------------
 
         for idx, item in enumerate(
             selected_sentences
@@ -217,6 +245,9 @@ class EvidenceFusion:
 
                 name = ent.text.strip()
 
+                if not name:
+                    continue
+
                 entity_names.append(name)
 
                 self.entities[
@@ -231,7 +262,9 @@ class EvidenceFusion:
 
                     "text": sentence,
 
-                    "similarity": similarity,
+                    "similarity": float(
+                        similarity
+                    ),
 
                     "entities": entity_names,
 
@@ -241,18 +274,18 @@ class EvidenceFusion:
 
             )
 
-        # ---------------------------------------------
+        # --------------------------------------------------
         # Connect nodes
-        # ---------------------------------------------
+        # --------------------------------------------------
 
         edge_threshold = 0.45
 
-        for i in range(len(nodes)):
+        for i in range(
+            len(nodes)
+        ):
 
             entities_i = set(
-
                 nodes[i]["entities"]
-
             )
 
             for j in range(
@@ -261,16 +294,19 @@ class EvidenceFusion:
             ):
 
                 entities_j = set(
-
                     nodes[j]["entities"]
-
                 )
 
                 weight = self._edge_weight(
+
                     list(entities_i),
+
                     list(entities_j),
+
                     nodes[i]["text"],
+
                     nodes[j]["text"],
+
                 )
 
                 if weight > edge_threshold:
@@ -278,24 +314,38 @@ class EvidenceFusion:
                     nodes[i][
                         "neighbors"
                     ].append(
+
                         {
+
                             "id": j,
-                            "weight": weight,
+
+                            "weight": float(
+                                weight
+                            ),
+
                         }
+
                     )
 
                     nodes[j][
                         "neighbors"
                     ].append(
+
                         {
+
                             "id": i,
-                            "weight": weight,
+
+                            "weight": float(
+                                weight
+                            ),
+
                         }
+
                     )
 
-        # ---------------------------------------------
+        # --------------------------------------------------
         # Debug
-        # ---------------------------------------------
+        # --------------------------------------------------
 
         print()
 
@@ -322,7 +372,8 @@ class EvidenceFusion:
         )
 
         return nodes
-        # ======================================================
+
+    # ======================================================
     # STEP 2
     # Merge Entity Groups
     # ======================================================
@@ -331,15 +382,13 @@ class EvidenceFusion:
         self,
         nodes: List[Dict],
     ) -> List[Dict]:
-        """
-        Groups together sentences that discuss the
-        same named entities.
 
-        Instead of physically merging text, this stage
-        enriches each node with a list of related
-        sentences. The paragraph builder will later
-        use these relationships to produce a coherent
-        summary.
+        """
+        Groups together sentences that discuss
+        related entities.
+
+        This does not physically modify sentence text.
+        It creates logical evidence groups.
         """
 
         print()
@@ -357,29 +406,42 @@ class EvidenceFusion:
 
             group = [node]
 
-            visited.add(node["id"])
+            visited.add(
+                node["id"]
+            )
 
-            # -----------------------------------------
-            # Find all directly connected neighbours
-            # -----------------------------------------
+            # --------------------------------------------------
+            # Find directly connected neighbours
+            # --------------------------------------------------
 
-            for neighbor in node["neighbors"]:
+            for neighbor in node[
+                "neighbors"
+            ]:
 
-                neighbor_id = neighbor["id"]
+                neighbor_id = neighbor[
+                    "id"
+                ]
 
-                if neighbor["weight"] < 0.45:
+                if neighbor[
+                    "weight"
+                ] < 0.45:
+
                     continue
 
                 if neighbor_id in visited:
                     continue
 
-                group.append(nodes[neighbor_id])
+                group.append(
+                    nodes[neighbor_id]
+                )
 
-                visited.add(neighbor_id)
+                visited.add(
+                    neighbor_id
+                )
 
-            # -----------------------------------------
+            # --------------------------------------------------
             # Collect unique entities
-            # -----------------------------------------
+            # --------------------------------------------------
 
             entity_set = set()
 
@@ -389,15 +451,17 @@ class EvidenceFusion:
                     item["entities"]
                 )
 
-            # -----------------------------------------
+            # --------------------------------------------------
             # Store grouped node
-            # -----------------------------------------
+            # --------------------------------------------------
 
             merged.append(
 
                 {
 
-                    "group_id": len(merged),
+                    "group_id": len(
+                        merged
+                    ),
 
                     "sentences": [
 
@@ -435,22 +499,24 @@ class EvidenceFusion:
     # ======================================================
 
     def _remove_redundancy(
-    self,
-    groups: List[Dict],
-    similarity_threshold: float = 0.92,
-) -> List[Dict]:
-        """
-        Removes semantically redundant evidence using
-        BGE embeddings.
+        self,
+        groups: List[Dict],
+        similarity_threshold: float = 0.92,
+    ) -> List[Dict]:
 
-        Sentences that convey nearly identical meaning
-        are removed while preserving the highest-ranked
-        evidence.
+        """
+        Removes semantically redundant evidence
+        using the centralized BGE embedding model.
+
+        Sentences with similarity >= threshold are
+        treated as redundant.
         """
 
         print()
 
-        print("Semantic Redundancy Removal")
+        print(
+            "Semantic Redundancy Removal"
+        )
 
         cleaned_groups = []
 
@@ -458,18 +524,31 @@ class EvidenceFusion:
 
         for group in groups:
 
-            sentences = group["sentences"]
+            sentences = group[
+                "sentences"
+            ]
 
             if len(sentences) <= 1:
 
-                cleaned_groups.append(group)
+                cleaned_groups.append(
+                    group
+                )
 
                 continue
 
-            embeddings = model.encode(
+            # --------------------------------------------------
+            # IMPORTANT:
+            # Use self.embedder instead of global model.
+            # --------------------------------------------------
+
+            embeddings = self.embedder.encode(
+
                 sentences,
+
                 convert_to_tensor=True,
+
                 normalize_embeddings=True,
+
             )
 
             keep = []
@@ -477,8 +556,11 @@ class EvidenceFusion:
             keep_embeddings = []
 
             for sentence, embedding in zip(
+
                 sentences,
+
                 embeddings,
+
             ):
 
                 duplicate = False
@@ -486,11 +568,17 @@ class EvidenceFusion:
                 for existing in keep_embeddings:
 
                     similarity = util.cos_sim(
+
                         embedding,
+
                         existing,
+
                     ).item()
 
-                    if similarity >= similarity_threshold:
+                    if (
+                        similarity
+                        >= similarity_threshold
+                    ):
 
                         duplicate = True
 
@@ -500,44 +588,57 @@ class EvidenceFusion:
 
                 if not duplicate:
 
-                    keep.append(sentence)
+                    keep.append(
+                        sentence
+                    )
 
-                    keep_embeddings.append(embedding)
+                    keep_embeddings.append(
+                        embedding
+                    )
 
             group["sentences"] = keep
 
-            cleaned_groups.append(group)
-
-        print(f"Removed : {removed}")
+            cleaned_groups.append(
+                group
+            )
 
         print(
-            f"Remaining Groups : {len(cleaned_groups)}"
+            f"Removed : {removed}"
+        )
+
+        print(
+            f"Remaining Groups : "
+            f"{len(cleaned_groups)}"
         )
 
         return cleaned_groups
-        # ======================================================
+
+    # ======================================================
     # STEP 4
     # Order Sentences
     # ======================================================
 
     def _order_sentences(
-    self,
-    groups: List[Dict],
-    graph: List[Dict],
-) -> List[str]:
+        self,
+        groups: List[Dict],
+        graph: List[Dict],
+    ) -> List[str]:
+
         """
         Orders evidence using graph importance.
 
-        Priority
+        Priority:
 
         1. Connectivity
-        2. Similarity
+        2. Semantic similarity
         3. Entity richness
         """
 
         print()
 
-        print("Graph-aware Ordering")
+        print(
+            "Graph-aware Ordering"
+        )
 
         graph_lookup = {
 
@@ -553,32 +654,66 @@ class EvidenceFusion:
 
             connectivity = 0.0
 
-            for sentence in group["sentences"]:
+            for sentence in group[
+                "sentences"
+            ]:
 
-                node = graph_lookup.get(sentence)
+                node = graph_lookup.get(
+                    sentence
+                )
 
                 if node:
 
-                    connectivity += self._graph_centrality(
-                        node["neighbors"]
+                    connectivity += (
+                        self._graph_centrality(
+                            node[
+                                "neighbors"
+                            ]
+                        )
                     )
 
-            centrality = connectivity / max(
-                len(group["sentences"]),
-                1,
+            centrality = (
+                connectivity
+                /
+                max(
+                    len(
+                        group[
+                            "sentences"
+                        ]
+                    ),
+                    1,
+                )
+            )
+
+            # --------------------------------------------------
+            # Normalize entity contribution.
+            # --------------------------------------------------
+
+            entity_score = min(
+                len(
+                    group[
+                        "entities"
+                    ]
+                ) / 5.0,
+                1.0,
             )
 
             score = (
 
-                0.45 * centrality
+                0.45
+                * centrality
 
                 +
 
-                0.35 * group["similarity"]
+                0.35
+                * group[
+                    "similarity"
+                ]
 
                 +
 
-                0.20 * len(group["entities"])
+                0.20
+                * entity_score
 
             )
 
@@ -608,22 +743,27 @@ class EvidenceFusion:
 
         for _, group in scored_groups:
 
-            for sentence in group["sentences"]:
+            for sentence in group[
+                "sentences"
+            ]:
 
                 if sentence in visited:
-
                     continue
 
-                ordered.append(sentence)
+                ordered.append(
+                    sentence
+                )
 
-                visited.add(sentence)
+                visited.add(
+                    sentence
+                )
 
         print()
 
         print(
-
-            f"Ordered {len(ordered)} evidence sentences"
-
+            f"Ordered "
+            f"{len(ordered)} "
+            f"evidence sentences"
         )
 
         return ordered
@@ -637,17 +777,20 @@ class EvidenceFusion:
         self,
         ordered_sentences: List[str],
     ) -> str:
-        """
-        Builds one coherent paragraph from
-        ordered evidence.
 
-        Performs small cleanup without
-        modifying factual content.
+        """
+        Builds one coherent paragraph
+        from ordered evidence.
+
+        Only performs whitespace and punctuation
+        cleanup. It does not generate new facts.
         """
 
         print()
 
-        print("Paragraph Builder")
+        print(
+            "Paragraph Builder"
+        )
 
         paragraph = " ".join(
 
@@ -655,41 +798,51 @@ class EvidenceFusion:
 
             for sentence in ordered_sentences
 
+            if sentence.strip()
+
         )
 
-        paragraph = paragraph.replace("  ", " ")
+        paragraph = paragraph.replace(
+            "  ",
+            " ",
+        )
 
-        if paragraph and not paragraph.endswith("."):
+        if (
+            paragraph
+            and not paragraph.endswith(".")
+        ):
 
             paragraph += "."
 
         print(
-
-            f"Paragraph Length : {len(paragraph.split())} words"
-
+            f"Paragraph Length : "
+            f"{len(paragraph.split())} words"
         )
 
         return paragraph
 
     # ======================================================
-    # Helper
+    # DEBUG
     # ======================================================
 
     def print_graph(
         self,
         graph: List[Dict],
     ):
+
         """
         Debug helper.
 
-        Prints the sentence graph.
+        Prints the complete sentence graph.
         """
 
         print()
 
         print("=" * 60)
 
-        print("Evidence Graph")
+        print(
+            "Evidence Graph"
+        )
 
         print("=" * 60)
 
@@ -698,84 +851,137 @@ class EvidenceFusion:
             print()
 
             print(
-
                 f"Node {node['id']}"
-
             )
 
             print(
-
-                f"Similarity : {node['similarity']:.4f}"
-
+                f"Similarity : "
+                f"{node['similarity']:.4f}"
             )
 
             print(
-
-                f"Entities   : {node['entities']}"
-
+                f"Entities   : "
+                f"{node['entities']}"
             )
 
             print(
-
-                f"Neighbors  : {node['neighbors']}"
-
+                f"Neighbors  : "
+                f"{node['neighbors']}"
             )
 
             print(
-
                 node["text"]
-
             )
 
         print()
 
         print("=" * 60)
 
+    # ======================================================
+    # ENTITY OVERLAP
+    # ======================================================
+
     def _entity_overlap(
         self,
         entities_a: List[str],
         entities_b: List[str],
     ) -> float:
+
         """
-        Computes Jaccard overlap between two entity sets.
+        Computes Jaccard overlap between
+        two entity sets.
         """
-        set_a = set(entities_a)
-        set_b = set(entities_b)
+
+        set_a = set(
+            entities_a
+        )
+
+        set_b = set(
+            entities_b
+        )
 
         if not set_a and not set_b:
+
             return 0.0
 
-        union = set_a | set_b
+        union = (
+            set_a | set_b
+        )
 
         if not union:
+
             return 0.0
 
-        return len(set_a & set_b) / len(union)
+        return (
+            len(
+                set_a & set_b
+            )
+            /
+            len(union)
+        )
+
+    # ======================================================
+    # SEMANTIC SIMILARITY
+    # ======================================================
 
     def _semantic_similarity(
         self,
         sentence_a: str,
         sentence_b: str,
     ) -> float:
+
         """
-        Computes semantic similarity between two sentences
-        using the existing BGE embedder.
+        Computes semantic similarity between
+        two sentences using the centralized
+        BGE embedding model.
         """
-        if not sentence_a or not sentence_b:
+
+        if (
+            not sentence_a
+            or not sentence_b
+        ):
+
             return 0.0
 
+        # --------------------------------------------------
+        # Reuse centralized embedding model.
+        # --------------------------------------------------
+
         embeddings = self.embedder.encode(
-            [sentence_a, sentence_b],
+
+            [
+                sentence_a,
+                sentence_b,
+            ],
+
             convert_to_tensor=True,
+
             normalize_embeddings=True,
+
         )
 
         similarity = util.cos_sim(
+
             embeddings[0],
+
             embeddings[1],
+
         ).item()
 
-        return max(0.0, min(1.0, similarity))
+        return max(
+
+            0.0,
+
+            min(
+                1.0,
+                similarity,
+            ),
+
+        )
+
+    # ======================================================
+    # EDGE WEIGHT
+    # ======================================================
 
     def _edge_weight(
         self,
@@ -784,23 +990,62 @@ class EvidenceFusion:
         sentence_a: str,
         sentence_b: str,
     ) -> float:
-        """
-        Combines entity overlap and semantic similarity
-        into a single weighted edge score.
-        """
-        overlap = self._entity_overlap(entities_a, entities_b)
-        semantic = self._semantic_similarity(sentence_a, sentence_b)
 
-        return (0.6 * overlap) + (0.4 * semantic)
+        """
+        Combines:
+
+        Entity overlap
+        +
+        Semantic similarity
+
+        into a single edge score.
+        """
+
+        overlap = (
+            self._entity_overlap(
+                entities_a,
+                entities_b,
+            )
+        )
+
+        semantic = (
+            self._semantic_similarity(
+                sentence_a,
+                sentence_b,
+            )
+        )
+
+        return (
+
+            0.6 * overlap
+
+            +
+
+            0.4 * semantic
+
+        )
+
+    # ======================================================
+    # GRAPH CENTRALITY
+    # ======================================================
 
     def _graph_centrality(
         self,
         neighbors: List[Dict],
     ) -> float:
+
         """
-        Computes weighted graph centrality from neighbor edges.
+        Computes weighted graph centrality
+        from neighbor edges.
         """
+
         return sum(
-            neighbor.get("weight", 0.0)
+
+            neighbor.get(
+                "weight",
+                0.0,
+            )
+
             for neighbor in neighbors
+
         )

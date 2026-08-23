@@ -6,8 +6,10 @@ import spacy
 from backend.ms_arc.state.retrieval_state import RetrievalState
 from backend.ms_arc.utils.helpers import normalize
 
+from backend.models.model_registry import ModelRegistry
+
 # Load spaCy model once
-nlp = spacy.load("en_core_web_sm")
+nlp = ModelRegistry.get_nlp()
 
 
 class QueryComplexityAnalyzer:

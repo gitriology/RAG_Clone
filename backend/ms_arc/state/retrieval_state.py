@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
 from typing import List, Dict
 
-from backend.ms_arc.state.retrieval_signals import RetrievalSignals
+
+from backend.ms_arc.state.retrieval_signals import (
+    RetrievalSignals
+)
 
 
 # ==========================================================
@@ -21,7 +24,9 @@ class RetrievedDocument:
 
     rerank_score: float = 0.0
 
-    metadata: Dict = field(default_factory=dict)
+    metadata: Dict = field(
+        default_factory=dict
+    )
 
 
 # ==========================================================
@@ -47,29 +52,41 @@ class RetrievalState:
 
     recommended_topk: int = 5
 
-    complexity_details: Dict = field(default_factory=dict)
+    complexity_details: Dict = field(
+        default_factory=dict
+    )
 
     # ======================================================
     # RETRIEVAL RESULTS
     # ======================================================
 
-    dense_results: List[RetrievedDocument] = field(
+    dense_results: List[
+        RetrievedDocument
+    ] = field(
         default_factory=list
     )
 
-    sparse_results: List[RetrievedDocument] = field(
+    sparse_results: List[
+        RetrievedDocument
+    ] = field(
         default_factory=list
     )
 
-    merged_results: List[RetrievedDocument] = field(
+    merged_results: List[
+        RetrievedDocument
+    ] = field(
         default_factory=list
     )
 
-    selected_documents: List[RetrievedDocument] = field(
+    selected_documents: List[
+        RetrievedDocument
+    ] = field(
         default_factory=list
     )
 
-    reranked_results: List[RetrievedDocument] = field(
+    reranked_results: List[
+        RetrievedDocument
+    ] = field(
         default_factory=list
     )
 
@@ -97,4 +114,6 @@ class RetrievalState:
     # DEBUG INFORMATION
     # ======================================================
 
-    debug: Dict = field(default_factory=dict)
+    debug: Dict = field(
+        default_factory=dict
+    )

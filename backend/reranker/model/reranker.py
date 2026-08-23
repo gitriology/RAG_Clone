@@ -1,29 +1,62 @@
-from sentence_transformers import CrossEncoder
-
-# Load model (once)
-model = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-
-
 def rerank(query, documents):
-    # Safety check (avoid crash)
+    """
+    Downstream reranking stage.
+
+    Optimization #4
+    ----------------
+    CrossEncoder inference is performed once inside
+    MS-ARC margin.py.
+
+    This function MUST NOT call model.predict()
+    again.
+
+    It only reuses the rerank_score already attached
+    to each document by MS-ARC.
+    """
+
+    # --------------------------------------------------
+    # Safety check
+    # --------------------------------------------------
+
     if not documents:
         return []
 
-    # Create query-document pairs
-    pairs = [(query, doc["text"]) for doc in documents]
+    # --------------------------------------------------
+    # Verify that MS-ARC already supplied scores
+    # --------------------------------------------------
 
-    # Get relevance scores
-    scores = model.predict(pairs)
+    print(
+        "[Optimization #4] Reusing existing CrossEncoder scores"
+    )
 
-    # Attach scores to documents
-    for doc, score in zip(documents, scores):
-        doc["rerank_score"] = float(score)
+    missing_scores = [
+        doc
+        for doc in documents
+        if "rerank_score" not in doc
+    ]
 
-    # Sort documents by score (descending)
+    if missing_scores:
+
+        raise ValueError(
+            "Optimization #4 error: "
+            "rerank_score is missing from one or more "
+            "documents. MS-ARC CrossEncoder results "
+            "must be propagated before calling rerank()."
+        )
+
+    # --------------------------------------------------
+    # Reuse existing CrossEncoder scores
+    # --------------------------------------------------
+
     ranked = sorted(
         documents,
-        key=lambda x: x["rerank_score"],
-        reverse=True
+        key=lambda doc: float(
+            doc.get(
+                "rerank_score",
+                0.0,
+            )
+        ),
+        reverse=True,
     )
 
     return ranked

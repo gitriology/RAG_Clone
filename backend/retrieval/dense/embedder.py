@@ -1,19 +1,14 @@
-from sentence_transformers import SentenceTransformer
 import numpy as np
 
-# ==========================================
-# Embedding Model
-# ==========================================
-
-model = SentenceTransformer(
-    "BAAI/bge-base-en-v1.5"
-)
+from backend.models.model_registry import ModelRegistry
 
 
 def get_embeddings(texts):
     """
     Generate normalized document embeddings.
     """
+
+    model = ModelRegistry.get_embedding_model()
 
     embeddings = model.encode(
         texts,
@@ -32,6 +27,8 @@ def encode_query(query):
     """
     Generate normalized query embedding.
     """
+
+    model = ModelRegistry.get_embedding_model()
 
     embedding = model.encode(
         [query],
