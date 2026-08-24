@@ -1,38 +1,21 @@
 import os
-
 import faiss
 
-
-from backend.retrieval.utils.load_data import (
-    load_data
-)
-
-from backend.retrieval.index.faiss_index import (
-    build_faiss
-)
-
-from backend.retrieval.lexical.bm25 import (
-    build_bm25
-)
-
-from backend.retrieval.hybrid.hybrid_search import (
-    hybrid_search
-)
-
+from backend.retrieval.utils.load_data import load_data
+from backend.retrieval.index.faiss_index import build_faiss
+from backend.retrieval.lexical.bm25 import build_bm25
+from backend.retrieval.hybrid.hybrid_search import hybrid_search
 
 from backend.ms_arc.state.retrieval_state import (
     RetrievalState,
     RetrievedDocument,
 )
 
-
 # ==========================================================
 # DATASET
 # ==========================================================
 
-print(
-    "[MS-ARC] Loading Dataset..."
-)
+print("[MS-ARC] Loading Dataset...")
 
 data = load_data(
     "data/processed/all_domains.json"
@@ -43,11 +26,7 @@ texts = [
     for doc in data
 ]
 
-
-# ==========================================================
-# DOCUMENT LOOKUP
-# ==========================================================
-
+# Fast lookup by document id
 doc_lookup = {
 
     idx: doc
@@ -55,7 +34,6 @@ doc_lookup = {
     for idx, doc in enumerate(data)
 
 }
-
 
 # ==========================================================
 # EMBEDDINGS
@@ -66,11 +44,10 @@ print(
 )
 
 from backend.retrieval.utils.load_embeddings import (
-    load_embeddings
+    load_embeddings,
 )
 
 embeddings = load_embeddings()
-
 
 # ==========================================================
 # FAISS
@@ -80,13 +57,11 @@ FAISS_PATH = (
     "backend/retrieval/index/faiss.index"
 )
 
-
-if os.path.exists(
-    FAISS_PATH
-):
+if os.path.exists(FAISS_PATH):
 
     print(
-        "[MS-ARC] Loading Existing FAISS Index..."
+        "[MS-ARC] "
+        "Loading Existing FAISS Index..."
     )
 
     faiss_index = faiss.read_index(
@@ -96,7 +71,8 @@ if os.path.exists(
 else:
 
     print(
-        "[MS-ARC] Building FAISS Index..."
+        "[MS-ARC] "
+        "Building FAISS Index..."
     )
 
     faiss_index = build_faiss(
@@ -108,19 +84,9 @@ else:
         FAISS_PATH
     )
 
-
-print(
-    len(data)
-)
-
-print(
-    len(texts)
-)
-
-print(
-    faiss_index.ntotal
-)
-
+print(len(data))
+print(len(texts))
+print(faiss_index.ntotal)
 
 # ==========================================================
 # BM25
@@ -145,29 +111,63 @@ print(
 
 def retrieve(
     state: RetrievalState,
-    candidate_k=None,
-    fusion_method="minmax",
+    fusion_method: str = "minmax",
 ) -> RetrievalState:
-
     """
     Performs hybrid retrieval.
 
-    Optimization #6
-    ----------------
-    candidate_k is supplied by the MS-ARC adaptive
-    candidate controller.
+    fusion_method is explicitly propagated through
+    the MS-ARC pipeline.
 
-    Optimization #5
-    ----------------
-    Stability retrieval is handled separately.
+    Supported:
 
-    Optimization #4
-    ----------------
-    CrossEncoder reranking is not performed here.
+        minmax
+        rrf
+
+    This explicit parameter is intentionally used
+    instead of an environment variable so that
+    benchmarking cannot accidentally reuse the
+    previously imported fusion configuration.
     """
 
+    fusion_method = (
+        fusion_method
+        or "minmax"
+    ).lower().strip()
+
+    if fusion_method not in {
+        "minmax",
+        "rrf",
+    }:
+
+        raise ValueError(
+            f"Unsupported fusion method: "
+            f"{fusion_method}"
+        )
+
+    print()
     print(
-        "\n[MS-ARC] Hybrid Retrieval"
+        "[MS-ARC] Hybrid Retrieval"
+    )
+
+    print(
+        "[MS-ARC] Fusion method:",
+        fusion_method,
+    )
+
+    # ======================================================
+    # Candidate depth
+    # ======================================================
+    #
+    # Optimization #6 candidate controller may already
+    # have selected a candidate depth.
+    #
+    # If present, use it.
+    # Otherwise let hybrid_search use its default.
+    # ======================================================
+
+    candidate_k = state.debug.get(
+        "candidate_k"
     )
 
     results = hybrid_search(
@@ -188,11 +188,15 @@ def retrieve(
 
     )
 
+    dense_docs = []
+
+    sparse_docs = []
+
+    merged_docs = []
+
     # ======================================================
     # Dense Results
     # ======================================================
-
-    dense_docs = []
 
     for item in results[
         "dense_results"
@@ -212,9 +216,9 @@ def retrieve(
 
                 text=item["text"],
 
-                dense_score=item[
-                    "dense_score"
-                ],
+                dense_score=float(
+                    item["dense_score"]
+                ),
 
                 sparse_score=0.0,
 
@@ -223,28 +227,28 @@ def retrieve(
                     "domain":
                         original.get(
                             "domain",
-                            "general"
+                            "general",
                         ),
 
                     "source":
                         original.get(
                             "source",
-                            "unknown"
+                            "unknown",
                         ),
 
                     "hybrid_score":
                         0.0,
 
-                    "dense_raw_score":
+                    "fusion_method":
+                        fusion_method,
+
+                    "dense_rank":
                         item.get(
-                            "dense_raw_score",
-                            0.0
+                            "dense_rank"
                         ),
 
-                    "fusion_method":
-                        results[
-                            "fusion_method"
-                        ],
+                    "sparse_rank":
+                        None,
 
                 },
 
@@ -255,8 +259,6 @@ def retrieve(
     # ======================================================
     # Sparse Results
     # ======================================================
-
-    sparse_docs = []
 
     for item in results[
         "sparse_results"
@@ -278,37 +280,37 @@ def retrieve(
 
                 dense_score=0.0,
 
-                sparse_score=item[
-                    "bm25_score"
-                ],
+                sparse_score=float(
+                    item["bm25_score"]
+                ),
 
                 metadata={
 
                     "domain":
                         original.get(
                             "domain",
-                            "general"
+                            "general",
                         ),
 
                     "source":
                         original.get(
                             "source",
-                            "unknown"
+                            "unknown",
                         ),
 
                     "hybrid_score":
                         0.0,
 
-                    "bm25_raw_score":
-                        item.get(
-                            "bm25_raw_score",
-                            0.0
-                        ),
-
                     "fusion_method":
-                        results[
-                            "fusion_method"
-                        ],
+                        fusion_method,
+
+                    "dense_rank":
+                        None,
+
+                    "sparse_rank":
+                        item.get(
+                            "sparse_rank"
+                        ),
 
                 },
 
@@ -319,8 +321,6 @@ def retrieve(
     # ======================================================
     # Hybrid Results
     # ======================================================
-
-    merged_docs = []
 
     for item in results[
         "merged_results"
@@ -340,44 +340,35 @@ def retrieve(
 
                 text=item["text"],
 
-                dense_score=item[
-                    "dense_score"
-                ],
+                dense_score=float(
+                    item["dense_score"]
+                ),
 
-                sparse_score=item[
-                    "bm25_score"
-                ],
+                sparse_score=float(
+                    item["bm25_score"]
+                ),
 
                 metadata={
 
                     "domain":
                         original.get(
                             "domain",
-                            "general"
+                            "general",
                         ),
 
                     "source":
                         original.get(
                             "source",
-                            "unknown"
+                            "unknown",
                         ),
 
                     "hybrid_score":
-                        item[
-                            "hybrid_score"
-                        ],
-
-                    "dense_raw_score":
-                        item.get(
-                            "dense_raw_score",
-                            0.0
+                        float(
+                            item["hybrid_score"]
                         ),
 
-                    "bm25_raw_score":
-                        item.get(
-                            "bm25_raw_score",
-                            0.0
-                        ),
+                    "fusion_method":
+                        fusion_method,
 
                     "dense_rank":
                         item.get(
@@ -389,11 +380,6 @@ def retrieve(
                             "sparse_rank"
                         ),
 
-                    "fusion_method":
-                        results[
-                            "fusion_method"
-                        ],
-
                 },
 
             )
@@ -401,80 +387,41 @@ def retrieve(
         )
 
     # ======================================================
-    # STORE RESULTS
+    # STORE STATE
     # ======================================================
 
-    state.dense_results = (
-        dense_docs
-    )
+    state.dense_results = dense_docs
 
-    state.sparse_results = (
-        sparse_docs
-    )
+    state.sparse_results = sparse_docs
 
-    state.merged_results = (
-        merged_docs
-    )
+    state.merged_results = merged_docs
 
     state.selected_documents = (
         merged_docs
     )
 
     # ======================================================
-    # OPTIMIZATION #6 DEBUG
+    # DEBUG
     # ======================================================
 
     state.debug[
-        "candidate_pool_used"
-    ] = results[
+        "fusion_method"
+    ] = fusion_method
+
+    state.debug[
+        "candidate_k_used"
+    ] = results.get(
         "candidate_k"
-    ]
-
-    state.debug[
-        "fusion_method"
-    ] = results[
-        "fusion_method"
-    ]
-
-    state.debug[
-        "dense_weight"
-    ] = results[
-        "dense_weight"
-    ]
-
-    state.debug[
-        "sparse_weight"
-    ] = results[
-        "sparse_weight"
-    ]
-
-    state.debug[
-        "rrf_k"
-    ] = results[
-        "rrf_k"
-    ]
-
-    state.debug[
-        "retrieved_document_count"
-    ] = len(
-        merged_docs
     )
 
     print(
-        "[MS-ARC] Retrieved "
+        f"[MS-ARC] Retrieved "
         f"{len(merged_docs)} documents."
     )
 
     print(
-        "[Optimization #6] "
-        f"Candidate pool used: "
-        f"{results['candidate_k']}"
-    )
-
-    print(
-        "[Optimization #6] "
-        f"Fusion method: "
-        f"{results['fusion_method']}"
+        "[MS-ARC] Fusion method used:",
+        fusion_method,
     )
 
     return state
@@ -494,30 +441,7 @@ if __name__ == "__main__":
 
     state = retrieve(
         state,
-        candidate_k=20,
         fusion_method="minmax",
-    )
-
-    print()
-
-    print(
-        "[MS-ARC] Dense Candidates   : "
-        f"{len(state.dense_results)}"
-    )
-
-    print(
-        "[MS-ARC] Sparse Candidates  : "
-        f"{len(state.sparse_results)}"
-    )
-
-    print(
-        "[MS-ARC] Final Top-K        : "
-        f"{len(state.selected_documents)}"
-    )
-
-    print(
-        "[MS-ARC] Fusion             : "
-        f"{state.debug.get('fusion_method')}"
     )
 
     print()
@@ -525,33 +449,11 @@ if __name__ == "__main__":
     for doc in state.selected_documents:
 
         print(
-            "-" * 60
-        )
-
-        print(
-            doc.doc_id
-        )
-
-        print(
-            doc.dense_score
-        )
-
-        print(
-            doc.sparse_score
-        )
-
-        print(
-            doc.metadata[
+            doc.doc_id,
+            doc.metadata.get(
+                "fusion_method"
+            ),
+            doc.metadata.get(
                 "hybrid_score"
-            ]
-        )
-
-        print(
-            doc.metadata[
-                "domain"
-            ]
-        )
-
-        print(
-            doc.text[:150]
+            ),
         )

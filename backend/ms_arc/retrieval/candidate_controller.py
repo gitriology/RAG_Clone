@@ -7,9 +7,9 @@ Determines retrieval candidate depth dynamically using:
 
 1. Query complexity
 2. Query type
-3. Retrieval disagreement
+3. Dense/Sparse disagreement
 4. Retrieval stability
-5. Short entity / acronym characteristics
+5. Short entity/acronym characteristics
 
 The controller ONLY determines candidate depth.
 
@@ -32,9 +32,6 @@ MAX_CANDIDATE_K = 40
 # ==========================================================
 
 def _normalize_query_type(query_type: str) -> str:
-    """
-    Normalize query type.
-    """
 
     if query_type is None:
         return ""
@@ -43,37 +40,10 @@ def _normalize_query_type(query_type: str) -> str:
 
 
 # ==========================================================
-# SAFE SIGNAL NORMALIZATION
-# ==========================================================
-
-def _clip_signal(value, default=0.5):
-    """
-    Convert a signal into [0, 1].
-    """
-
-    try:
-        value = float(value)
-    except (TypeError, ValueError):
-        value = default
-
-    return max(0.0, min(1.0, value))
-
-
-# ==========================================================
 # SHORT ENTITY / ACRONYM DETECTION
 # ==========================================================
 
 def is_short_entity_query(query: str) -> bool:
-    """
-    Detect short factual/entity-style queries.
-
-    Examples:
-        What is WHO?
-        What is NASA?
-        What is ISRO?
-        Define AI
-        What is FAISS?
-    """
 
     if not query:
         return False
@@ -105,10 +75,6 @@ def is_short_entity_query(query: str) -> bool:
     if not is_definition_style:
         return False
 
-    # ------------------------------------------------------
-    # Explicit acronym/entity detection
-    # ------------------------------------------------------
-
     for word in words:
 
         cleaned = word.strip(
@@ -121,83 +87,21 @@ def is_short_entity_query(query: str) -> bool:
         ):
             return True
 
-    # ------------------------------------------------------
-    # A short definition-style query is still retrieval
-    # sensitive even if the entity is not uppercase.
-    # ------------------------------------------------------
-
-    return True
+    # Short definition questions are still
+    # retrieval-sensitive.
+    return False
 
 
 # ==========================================================
-# COMPLEXITY CONTRIBUTION
+# SIGNAL NORMALIZATION
 # ==========================================================
 
-def _complexity_contribution(complexity: float) -> int:
-    """
-    Convert query complexity into candidate-depth
-    contribution.
+def _clamp(value: float) -> float:
 
-    Complexity is interpreted continuously rather than
-    relying only on query_type.
-    """
-
-    if complexity < 0.30:
-        return 0
-
-    if complexity < 0.55:
-        return 10
-
-    if complexity < 0.75:
-        return 20
-
-    return 30
-
-
-# ==========================================================
-# DISAGREEMENT CONTRIBUTION
-# ==========================================================
-
-def _disagreement_contribution(agreement: float) -> int:
-    """
-    Low dense/BM25 agreement means high retrieval
-    uncertainty.
-
-    Therefore:
-
-        high agreement -> no expansion
-        medium agreement -> small expansion
-        low agreement -> large expansion
-    """
-
-    if agreement < 0.20:
-        return 10
-
-    if agreement < 0.40:
-        return 5
-
-    return 0
-
-
-# ==========================================================
-# INSTABILITY CONTRIBUTION
-# ==========================================================
-
-def _instability_contribution(stability: float) -> int:
-    """
-    Low stability means retrieval ranking is sensitive
-    to Top-K changes.
-
-    Therefore a wider candidate pool is useful.
-    """
-
-    if stability < 0.40:
-        return 10
-
-    if stability < 0.60:
-        return 5
-
-    return 0
+    return max(
+        0.0,
+        min(1.0, value)
+    )
 
 
 # ==========================================================
@@ -217,33 +121,13 @@ def determine_candidate_k(
 
     The controller combines:
 
-        Query complexity
-        +
-        Retrieval disagreement
-        +
-        Retrieval instability
-        +
-        Entity sensitivity
+        complexity
+        + disagreement
+        + instability
+        + short-entity sensitivity
 
-    Parameters
-    ----------
-    query_complexity:
-        Complexity score in [0, 1].
-
-    query_type:
-        simple / medium / complex / very_complex.
-
-    agreement:
-        Dense/BM25 retrieval agreement in [0, 1].
-
-    stability:
-        Retrieval stability in [0, 1].
-
-    requested_k:
-        Final number of documents required.
-
-    query:
-        Original user query.
+    Lower agreement/stability means greater uncertainty,
+    therefore a larger candidate pool.
 
     Returns
     -------
@@ -252,22 +136,57 @@ def determine_candidate_k(
     """
 
     # ======================================================
-    # Normalize signals
+    # Normalize complexity
     # ======================================================
 
-    complexity = _clip_signal(
-        query_complexity,
-        default=0.0
+    try:
+        complexity = float(
+            query_complexity
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
+        complexity = 0.0
+
+    complexity = _clamp(
+        complexity
     )
 
-    agreement = _clip_signal(
-        agreement,
-        default=0.5
+    # ======================================================
+    # Normalize agreement
+    # ======================================================
+
+    try:
+        agreement = float(
+            agreement
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
+        agreement = 0.5
+
+    agreement = _clamp(
+        agreement
     )
 
-    stability = _clip_signal(
-        stability,
-        default=0.5
+    # ======================================================
+    # Normalize stability
+    # ======================================================
+
+    try:
+        stability = float(
+            stability
+        )
+    except (
+        TypeError,
+        ValueError,
+    ):
+        stability = 0.5
+
+    stability = _clamp(
+        stability
     )
 
     query_type = _normalize_query_type(
@@ -275,137 +194,111 @@ def determine_candidate_k(
     )
 
     # ======================================================
-    # Determine requested K
+    # Base candidate pool
     # ======================================================
 
-    if requested_k is None:
+    if query_type == "simple":
 
-        requested_k = 3
+        candidate_k = 10
 
-    try:
-        requested_k = int(
-            requested_k
-        )
+    elif query_type == "medium":
 
-    except (TypeError, ValueError):
-
-        requested_k = 3
-
-    requested_k = max(
-        1,
-        requested_k
-    )
-
-    # ======================================================
-    # BASE DEPTH
-    # ======================================================
-    #
-    # The baseline is deliberately proportional to the
-    # requested result size rather than:
-    #
-    #     max(k * 4, 20)
-    #
-    # used by the old implementation.
-    #
-    # MS-ARC then expands this according to uncertainty.
-    # ======================================================
-
-    base_candidate_k = max(
-        requested_k * 2,
-        MIN_CANDIDATE_K
-    )
-
-    # ======================================================
-    # Complexity contribution
-    # ======================================================
-
-    complexity_addition = (
-        _complexity_contribution(
-            complexity
-        )
-    )
-
-    # ======================================================
-    # Query-type contribution
-    # ======================================================
-
-    query_type_addition = 0
-
-    if query_type == "medium":
-        query_type_addition = 5
+        candidate_k = 20
 
     elif query_type == "complex":
-        query_type_addition = 10
+
+        candidate_k = 30
 
     elif query_type == "very_complex":
-        query_type_addition = 15
 
-    # Avoid double-counting complexity too aggressively.
-    #
-    # Query type is used only as a small refinement.
-    query_type_addition = min(
-        query_type_addition,
-        10
-    )
+        candidate_k = 40
+
+    else:
+
+        if complexity < 0.30:
+            candidate_k = 10
+
+        elif complexity < 0.55:
+            candidate_k = 20
+
+        elif complexity < 0.75:
+            candidate_k = 30
+
+        else:
+            candidate_k = 40
+
+    base_candidate_k = candidate_k
 
     # ======================================================
-    # Short entity contribution
+    # Short entity / acronym
     # ======================================================
 
     short_entity = is_short_entity_query(
         query
     )
 
-    entity_addition = 5 if short_entity else 0
+    if short_entity:
+
+        candidate_k = max(
+            candidate_k,
+            15
+        )
 
     # ======================================================
     # Retrieval disagreement
     # ======================================================
 
-    disagreement_addition = (
-        _disagreement_contribution(
-            agreement
-        )
-    )
+    disagreement = 1.0 - agreement
+
+    if disagreement >= 0.75:
+
+        candidate_k += 10
+
+    elif disagreement >= 0.50:
+
+        candidate_k += 5
 
     # ======================================================
     # Retrieval instability
     # ======================================================
 
-    instability_addition = (
-        _instability_contribution(
-            stability
+    instability = 1.0 - stability
+
+    if instability >= 0.60:
+
+        candidate_k += 10
+
+    elif instability >= 0.40:
+
+        candidate_k += 5
+
+    # ======================================================
+    # Requested K constraint
+    # ======================================================
+
+    requested_k_value = None
+
+    if requested_k is not None:
+
+        try:
+            requested_k_value = int(
+                requested_k
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            requested_k_value = 1
+
+        requested_k_value = max(
+            1,
+            requested_k_value
         )
-    )
 
-    # ======================================================
-    # Combine controller signals
-    # ======================================================
-
-    candidate_k = (
-
-        base_candidate_k
-
-        + complexity_addition
-
-        + query_type_addition
-
-        + entity_addition
-
-        + disagreement_addition
-
-        + instability_addition
-
-    )
-
-    # ======================================================
-    # Ensure enough candidates
-    # ======================================================
-
-    candidate_k = max(
-        candidate_k,
-        requested_k
-    )
+        candidate_k = max(
+            candidate_k,
+            requested_k_value * 2
+        )
 
     # ======================================================
     # Clamp
@@ -429,61 +322,39 @@ def determine_candidate_k(
     )
 
     print(
-        f"Query Type              : {query_type}"
+        f"Query Type        : {query_type}"
     )
 
     print(
-        f"Query Complexity        : {complexity:.3f}"
+        f"Query Complexity  : {complexity:.3f}"
     )
 
     print(
-        f"Short Entity            : {short_entity}"
+        f"Short Entity      : {short_entity}"
     )
 
     print(
-        f"Agreement               : {agreement:.3f}"
+        f"Agreement         : {agreement:.3f}"
     )
 
     print(
-        f"Stability               : {stability:.3f}"
+        f"Disagreement      : {disagreement:.3f}"
     )
 
     print(
-        f"Requested Top-K         : {requested_k}"
+        f"Stability         : {stability:.3f}"
     )
 
     print(
-        f"Base Candidate K        : {base_candidate_k}"
+        f"Instability       : {instability:.3f}"
     )
 
     print(
-        f"Complexity Addition     : "
-        f"{complexity_addition}"
+        f"Base Candidate K  : {base_candidate_k}"
     )
 
     print(
-        f"Query-Type Addition     : "
-        f"{query_type_addition}"
-    )
-
-    print(
-        f"Entity Addition         : "
-        f"{entity_addition}"
-    )
-
-    print(
-        f"Disagreement Addition   : "
-        f"{disagreement_addition}"
-    )
-
-    print(
-        f"Instability Addition    : "
-        f"{instability_addition}"
-    )
-
-    print(
-        f"Final Candidate K       : "
-        f"{candidate_k}"
+        f"Final Candidate K : {candidate_k}"
     )
 
     print()

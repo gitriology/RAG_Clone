@@ -1,4 +1,19 @@
-import re
+"""
+Optimization #6
+Hybrid Search / Fusion Layer
+
+Supports:
+
+    1. Min-Max weighted fusion
+    2. Reciprocal Rank Fusion (RRF)
+
+Important:
+    This module is responsible ONLY for candidate retrieval
+    and fusion.
+
+MS-ARC, stability analysis and final reranking are handled
+outside this module.
+"""
 
 import numpy as np
 
@@ -6,92 +21,19 @@ from backend.retrieval.dense.embedder import encode_query
 
 
 # ==========================================================
-# QUERY NORMALIZATION
-# ==========================================================
-
-QUESTION_WORDS = {
-
-    "what",
-    "is",
-    "are",
-    "was",
-    "were",
-    "who",
-    "whom",
-    "where",
-    "when",
-    "why",
-    "how",
-    "can",
-    "could",
-    "would",
-    "should",
-    "tell",
-    "explain",
-    "define",
-    "give",
-    "me",
-    "about",
-
-}
-
-
-def _normalize_query(query):
-
-    """
-    Normalize the query for sparse/BM25 retrieval.
-
-    Dense retrieval receives the ORIGINAL query.
-    """
-
-    if not query:
-        return ""
-
-    query = str(
-        query
-    ).lower().strip()
-
-    query = re.sub(
-        r"[^a-z0-9\s\-]",
-        " ",
-        query,
-    )
-
-    tokens = query.split()
-
-    filtered_tokens = [
-
-        token
-
-        for token in tokens
-
-        if token not in QUESTION_WORDS
-
-    ]
-
-    if not filtered_tokens:
-
-        filtered_tokens = tokens
-
-    return " ".join(
-        filtered_tokens
-    )
-
-
-# ==========================================================
-# MIN-MAX NORMALIZATION
+# NORMALIZATION
 # ==========================================================
 
 def _normalize(scores):
-
     """
     Query-local Min-Max normalization.
 
-    This is intentionally retained as the BASELINE
-    fusion strategy for Optimization #6.
+    NOTE:
+        This is intentionally retained for the Min-Max
+        ablation experiment.
 
-    It should NOT be silently replaced because it is
-    required for the fusion ablation experiment.
+        It should NOT be interpreted as globally calibrated
+        scoring.
     """
 
     scores = np.asarray(
@@ -100,89 +42,22 @@ def _normalize(scores):
     )
 
     if len(scores) == 0:
-
         return scores
 
-    minimum = np.min(
-        scores
-    )
-
-    maximum = np.max(
-        scores
-    )
+    minimum = np.min(scores)
+    maximum = np.max(scores)
 
     if maximum == minimum:
-
-        return np.ones_like(
-            scores
-        )
+        return np.ones_like(scores)
 
     return (
-        scores - minimum
-    ) / (
-        maximum - minimum
+        (scores - minimum)
+        / (maximum - minimum)
     )
 
 
 # ==========================================================
-# Z-SCORE NORMALIZATION
-# ==========================================================
-
-def _zscore_normalize(scores):
-
-    """
-    Standard-score normalization.
-
-    This is provided as an optional calibrated-style
-    score fusion baseline.
-
-    Unlike Min-Max, it preserves information about how
-    far a score lies from the distribution mean.
-    """
-
-    scores = np.asarray(
-        scores,
-        dtype=np.float32,
-    )
-
-    if len(scores) == 0:
-
-        return scores
-
-    mean = np.mean(
-        scores
-    )
-
-    std = np.std(
-        scores
-    )
-
-    if std < 1e-8:
-
-        return np.zeros_like(
-            scores
-        )
-
-    z = (
-        scores - mean
-    ) / std
-
-    # ------------------------------------------------------
-    # Convert z-score to a bounded [0,1] score.
-    #
-    # Logistic transformation prevents large outliers
-    # from dominating fusion.
-    # ------------------------------------------------------
-
-    return 1.0 / (
-        1.0 + np.exp(
-            -z
-        )
-    )
-
-
-# ==========================================================
-# RRF SCORE
+# RRF
 # ==========================================================
 
 def _rrf_score(
@@ -190,33 +65,32 @@ def _rrf_score(
     sparse_rank,
     rrf_k=60,
 ):
-
     """
     Reciprocal Rank Fusion.
 
-    Formula:
+        RRF(d) =
+            1 / (k + dense_rank)
+            +
+            1 / (k + sparse_rank)
 
-        1 / (rrf_k + dense_rank)
-        +
-        1 / (rrf_k + sparse_rank)
-
-    Ranks are 1-based.
-
-    Missing rankings contribute zero.
+    A document contributes only from the retrieval
+    systems in which it appears.
     """
 
     score = 0.0
 
     if dense_rank is not None:
 
-        score += 1.0 / (
-            rrf_k + dense_rank
+        score += (
+            1.0
+            / (rrf_k + dense_rank)
         )
 
     if sparse_rank is not None:
 
-        score += 1.0 / (
-            rrf_k + sparse_rank
+        score += (
+            1.0
+            / (rrf_k + sparse_rank)
         )
 
     return score
@@ -227,365 +101,285 @@ def _rrf_score(
 # ==========================================================
 
 def hybrid_search(
-
     query,
-
     faiss_index,
-
     bm25,
-
     texts,
-
     k=10,
-
     candidate_k=None,
-
     dense_weight=0.6,
-
     sparse_weight=0.4,
-
     fusion_method="minmax",
-
     rrf_k=60,
-
 ):
-
     """
-    Hybrid Retrieval.
+    Execute dense + sparse retrieval followed by fusion.
 
-    Fusion methods:
+    Supported:
 
-        minmax
-            Original weighted Min-Max fusion.
-            This is the baseline.
+        fusion_method="minmax"
+        fusion_method="rrf"
 
-        rrf
-            Reciprocal Rank Fusion.
+    Returns:
 
-        zscore
-            Z-score + sigmoid score fusion.
-
-    Optimization #6
-    ----------------
-    candidate_k is supplied by MS-ARC.
-
-    The old:
-
-        max(k * 4, 20)
-
-    rule is retained ONLY as a fallback for direct calls
-    that bypass MS-ARC. The MS-ARC pipeline always supplies
-    an adaptive candidate_k.
+        {
+            "dense_results": [...],
+            "sparse_results": [...],
+            "merged_results": [...],
+            "fusion_method": ...,
+            "candidate_k": ...
+        }
     """
 
     # ======================================================
-    # ORIGINAL QUERY
+    # NORMALIZE FUSION METHOD
     # ======================================================
 
-    original_query = str(
-        query
-    ).strip()
+    fusion_method = (
+        fusion_method
+        or "minmax"
+    ).lower().strip()
+
+    if fusion_method not in {
+        "minmax",
+        "rrf",
+    }:
+
+        raise ValueError(
+            f"Unsupported fusion method: "
+            f"{fusion_method}. "
+            f"Expected 'minmax' or 'rrf'."
+        )
 
     # ======================================================
-    # SPARSE QUERY
-    # ======================================================
-
-    sparse_query = _normalize_query(
-        original_query
-    )
-
-    print(
-        "[Hybrid Retrieval] "
-        f"Original query: {original_query}"
-    )
-
-    print(
-        "[Hybrid Retrieval] "
-        f"Sparse query: {sparse_query}"
-    )
-
-    # ======================================================
-    # Candidate Pool
+    # CANDIDATE DEPTH
     # ======================================================
 
     if candidate_k is None:
-
-        # --------------------------------------------------
-        # Direct-call fallback only.
-        #
-        # MS-ARC itself never uses this path.
-        # --------------------------------------------------
 
         candidate_k = max(
             k * 4,
             20,
         )
 
-        print(
-            "[Hybrid Retrieval] "
-            "WARNING: candidate_k not supplied. "
-            "Using direct-call baseline."
-        )
-
     candidate_k = max(
         int(candidate_k),
-        k,
-    )
-
-    candidate_k = min(
-        candidate_k,
-        len(texts),
+        int(k),
     )
 
     print(
         f"[Hybrid Retrieval] "
-        f"Executing hybrid search "
-        f"with k={k}, "
+        f"Executing hybrid search: "
+        f"k={k}, "
         f"candidate_k={candidate_k}, "
         f"fusion={fusion_method}"
     )
 
     # ======================================================
-    # Dense Retrieval
+    # DENSE RETRIEVAL
     # ======================================================
 
-    query_embedding = encode_query(
-        original_query
-    )
+    query_embedding = encode_query(query)
 
-    dense_raw_scores, dense_ids = (
+    dense_scores, dense_ids = (
         faiss_index.search(
             query_embedding,
             candidate_k,
         )
     )
 
-    dense_raw_scores = (
-        dense_raw_scores[0]
-    )
+    dense_scores_raw = dense_scores[0]
+    dense_ids = dense_ids[0]
 
-    dense_ids = (
-        dense_ids[0]
-    )
+    valid_dense = []
 
-    # ------------------------------------------------------
-    # Keep raw scores.
-    #
-    # They are needed for:
-    #
-    #   1. Min-Max fusion
-    #   2. Z-score fusion
-    #   3. diagnostics
-    # ------------------------------------------------------
+    for doc_id, score in zip(
+        dense_ids,
+        dense_scores_raw,
+    ):
 
-    dense_normalized_scores = _normalize(
-        dense_raw_scores
-    )
+        doc_id = int(doc_id)
 
-    dense_zscores = _zscore_normalize(
-        dense_raw_scores
+        if doc_id < 0:
+            continue
+
+        if doc_id >= len(texts):
+            continue
+
+        valid_dense.append(
+            (
+                doc_id,
+                float(score),
+            )
+        )
+
+    # ======================================================
+    # DENSE NORMALIZATION
+    # ======================================================
+
+    normalized_dense = _normalize(
+        [
+            score
+            for _, score in valid_dense
+        ]
     )
 
     dense_results = []
-
     dense_lookup = {}
-
     dense_rank_lookup = {}
 
     for rank, (
-        doc_id,
+        (doc_id, raw_score),
         normalized_score,
-        raw_score,
-        zscore,
     ) in enumerate(
-
         zip(
-            dense_ids,
-            dense_normalized_scores,
-            dense_raw_scores,
-            dense_zscores,
+            valid_dense,
+            normalized_dense,
         ),
-
         start=1,
     ):
 
-        doc_id = int(
-            doc_id
-        )
+        dense_rank_lookup[doc_id] = rank
 
-        if (
-            doc_id < 0
-            or doc_id >= len(texts)
-        ):
+        document = {
 
-            continue
+            "doc_id": doc_id,
 
-        doc = {
+            "text": texts[doc_id],
 
-            "doc_id":
-                doc_id,
-
-            "text":
-                texts[doc_id],
+            "dense_raw_score":
+                raw_score,
 
             "dense_score":
                 float(normalized_score),
 
-            "dense_raw_score":
-                float(raw_score),
-
-            "dense_zscore":
-                float(zscore),
-
-            "bm25_score":
-                0.0,
-
             "bm25_raw_score":
                 0.0,
 
-            "bm25_zscore":
+            "bm25_score":
                 0.0,
 
             "hybrid_score":
                 0.0,
 
+            "dense_rank":
+                rank,
+
+            "sparse_rank":
+                None,
+
+            "fusion_method":
+                fusion_method,
+
         }
 
-        dense_results.append(
-            doc
-        )
+        dense_results.append(document)
 
-        dense_lookup[
-            doc_id
-        ] = doc
-
-        dense_rank_lookup[
-            doc_id
-        ] = rank
+        dense_lookup[doc_id] = document
 
     # ======================================================
-    # Sparse Retrieval
+    # SPARSE RETRIEVAL
     # ======================================================
 
-    sparse_tokens = (
-
-        sparse_query.split()
-
-        if sparse_query
-
-        else original_query.lower().split()
-
-    )
+    bm25_tokens = query.lower().split()
 
     print(
-        "[Hybrid Retrieval] "
-        f"BM25 tokens: {sparse_tokens}"
+        f"[Hybrid Retrieval] "
+        f"BM25 tokens: {bm25_tokens}"
     )
 
     bm25_scores = bm25.get_scores(
-        sparse_tokens
+        bm25_tokens
     )
 
     bm25_ids = np.argsort(
         bm25_scores
     )[::-1][:candidate_k]
 
-    bm25_raw_top_scores = (
-        bm25_scores[
-            bm25_ids
+    valid_sparse = []
+
+    for doc_id in bm25_ids:
+
+        doc_id = int(doc_id)
+
+        if doc_id < 0:
+            continue
+
+        if doc_id >= len(texts):
+            continue
+
+        valid_sparse.append(
+            (
+                doc_id,
+                float(
+                    bm25_scores[doc_id]
+                ),
+            )
+        )
+
+    normalized_sparse = _normalize(
+        [
+            score
+            for _, score in valid_sparse
         ]
     )
 
-    bm25_normalized_scores = _normalize(
-        bm25_raw_top_scores
-    )
-
-    bm25_zscores = _zscore_normalize(
-        bm25_raw_top_scores
-    )
-
     sparse_results = []
-
     sparse_lookup = {}
-
     sparse_rank_lookup = {}
 
     for rank, (
-        doc_id,
+        (doc_id, raw_score),
         normalized_score,
-        raw_score,
-        zscore,
     ) in enumerate(
-
         zip(
-            bm25_ids,
-            bm25_normalized_scores,
-            bm25_raw_top_scores,
-            bm25_zscores,
+            valid_sparse,
+            normalized_sparse,
         ),
-
         start=1,
     ):
 
-        doc_id = int(
-            doc_id
-        )
+        sparse_rank_lookup[doc_id] = rank
 
-        if (
-            doc_id < 0
-            or doc_id >= len(texts)
-        ):
+        document = {
 
-            continue
+            "doc_id": doc_id,
 
-        doc = {
-
-            "doc_id":
-                doc_id,
-
-            "text":
-                texts[doc_id],
-
-            "dense_score":
-                0.0,
+            "text": texts[doc_id],
 
             "dense_raw_score":
                 0.0,
 
-            "dense_zscore":
+            "dense_score":
                 0.0,
+
+            "bm25_raw_score":
+                raw_score,
 
             "bm25_score":
                 float(normalized_score),
 
-            "bm25_raw_score":
-                float(raw_score),
-
-            "bm25_zscore":
-                float(zscore),
-
             "hybrid_score":
                 0.0,
 
+            "dense_rank":
+                None,
+
+            "sparse_rank":
+                rank,
+
+            "fusion_method":
+                fusion_method,
+
         }
 
-        sparse_results.append(
-            doc
-        )
+        sparse_results.append(document)
 
-        sparse_lookup[
-            doc_id
-        ] = doc
-
-        sparse_rank_lookup[
-            doc_id
-        ] = rank
+        sparse_lookup[doc_id] = document
 
     # ======================================================
     # MERGE CANDIDATES
     # ======================================================
-
-    merged_lookup = {}
 
     all_doc_ids = set(
         dense_lookup.keys()
@@ -595,13 +389,29 @@ def hybrid_search(
         sparse_lookup.keys()
     )
 
+    print(
+        f"[Hybrid Retrieval] "
+        f"Dense candidates: "
+        f"{len(dense_results)}"
+    )
+
+    print(
+        f"[Hybrid Retrieval] "
+        f"Sparse candidates: "
+        f"{len(sparse_results)}"
+    )
+
+    print(
+        f"[Hybrid Retrieval] "
+        f"Merged candidates: "
+        f"{len(all_doc_ids)}"
+    )
+
     # ======================================================
-    # HYBRID FUSION
+    # FUSION
     # ======================================================
 
-    fusion_method = str(
-        fusion_method
-    ).lower().strip()
+    merged_results = []
 
     for doc_id in all_doc_ids:
 
@@ -613,95 +423,45 @@ def hybrid_search(
             doc_id
         )
 
-        # --------------------------------------------------
-        # Dense scores
-        # --------------------------------------------------
-
         dense_score = (
-
-            dense_doc.get(
-                "dense_score",
-                0.0,
-            )
-
+            dense_doc["dense_score"]
             if dense_doc
-
             else 0.0
+        )
 
+        sparse_score = (
+            sparse_doc["bm25_score"]
+            if sparse_doc
+            else 0.0
         )
 
         dense_raw_score = (
-
-            dense_doc.get(
-                "dense_raw_score",
-                0.0,
-            )
-
+            dense_doc["dense_raw_score"]
             if dense_doc
-
             else 0.0
-
-        )
-
-        dense_zscore = (
-
-            dense_doc.get(
-                "dense_zscore",
-                0.0,
-            )
-
-            if dense_doc
-
-            else 0.0
-
-        )
-
-        # --------------------------------------------------
-        # Sparse scores
-        # --------------------------------------------------
-
-        sparse_score = (
-
-            sparse_doc.get(
-                "bm25_score",
-                0.0,
-            )
-
-            if sparse_doc
-
-            else 0.0
-
         )
 
         sparse_raw_score = (
-
-            sparse_doc.get(
-                "bm25_raw_score",
-                0.0,
-            )
-
+            sparse_doc["bm25_raw_score"]
             if sparse_doc
-
             else 0.0
-
         )
 
-        sparse_zscore = (
-
-            sparse_doc.get(
-                "bm25_zscore",
-                0.0,
+        dense_rank = (
+            dense_rank_lookup.get(
+                doc_id
             )
-
-            if sparse_doc
-
-            else 0.0
-
         )
 
-        # ==================================================
+        sparse_rank = (
+            sparse_rank_lookup.get(
+                doc_id
+            )
+        )
+
+        # --------------------------------------------------
         # MIN-MAX FUSION
-        # ==================================================
+        # --------------------------------------------------
 
         if fusion_method == "minmax":
 
@@ -717,196 +477,94 @@ def hybrid_search(
 
             )
 
-        # ==================================================
+        # --------------------------------------------------
         # RRF
-        # ==================================================
-
-        elif fusion_method == "rrf":
-
-            dense_rank = (
-                dense_rank_lookup.get(
-                    doc_id
-                )
-            )
-
-            sparse_rank = (
-                sparse_rank_lookup.get(
-                    doc_id
-                )
-            )
-
-            hybrid_score = _rrf_score(
-
-                dense_rank=dense_rank,
-
-                sparse_rank=sparse_rank,
-
-                rrf_k=rrf_k,
-
-            )
-
-        # ==================================================
-        # Z-SCORE FUSION
-        # ==================================================
-
-        elif fusion_method in (
-            "zscore",
-            "calibrated",
-        ):
-
-            hybrid_score = (
-
-                dense_weight
-                * dense_zscore
-
-                +
-
-                sparse_weight
-                * sparse_zscore
-
-            )
+        # --------------------------------------------------
 
         else:
 
-            raise ValueError(
-
-                "Unknown fusion_method: "
-
-                f"{fusion_method}. "
-
-                "Supported values are: "
-
-                "'minmax', 'rrf', 'zscore'."
-
+            hybrid_score = _rrf_score(
+                dense_rank=dense_rank,
+                sparse_rank=sparse_rank,
+                rrf_k=rrf_k,
             )
 
-        # ==================================================
-        # Store
-        # ==================================================
-
-        merged_lookup[
-            doc_id
-        ] = {
+        merged_results.append({
 
             "doc_id":
-                doc_id,
+                int(doc_id),
 
             "text":
                 texts[doc_id],
 
-            "dense_score":
-                float(dense_score),
-
             "dense_raw_score":
                 float(dense_raw_score),
 
-            "dense_zscore":
-                float(dense_zscore),
-
-            "bm25_score":
-                float(sparse_score),
+            "dense_score":
+                float(dense_score),
 
             "bm25_raw_score":
                 float(sparse_raw_score),
 
-            "bm25_zscore":
-                float(sparse_zscore),
+            "bm25_score":
+                float(sparse_score),
 
             "hybrid_score":
                 float(hybrid_score),
 
             "dense_rank":
-                dense_rank_lookup.get(
-                    doc_id
-                ),
+                dense_rank,
 
             "sparse_rank":
-                sparse_rank_lookup.get(
-                    doc_id
-                ),
+                sparse_rank,
 
-        }
+            "fusion_method":
+                fusion_method,
+
+        })
 
     # ======================================================
     # SORT
     # ======================================================
 
-    merged_results = sorted(
-
-        merged_lookup.values(),
-
+    merged_results.sort(
         key=lambda x:
             x["hybrid_score"],
-
         reverse=True,
-
     )
 
     # ======================================================
-    # FINAL TOP-K
+    # TOP K
     # ======================================================
 
-    final_results = (
+    merged_results = (
         merged_results[:k]
+    )
+
+    print(
+        f"[Hybrid Retrieval] "
+        f"Final documents: "
+        f"{len(merged_results)}"
     )
 
     # ======================================================
     # DEBUG
     # ======================================================
 
-    print(
-        "[Hybrid Retrieval] "
-        f"Dense candidates: "
-        f"{len(dense_results)}"
-    )
-
-    print(
-        "[Hybrid Retrieval] "
-        f"Sparse candidates: "
-        f"{len(sparse_results)}"
-    )
-
-    print(
-        "[Hybrid Retrieval] "
-        f"Merged candidates: "
-        f"{len(merged_lookup)}"
-    )
-
-    print(
-        "[Hybrid Retrieval] "
-        f"Final documents: "
-        f"{len(final_results)}"
-    )
-
-    print(
-        "[Hybrid Retrieval] "
-        f"Fusion method: "
-        f"{fusion_method}"
-    )
-
-    # ======================================================
-    # TOP DOCUMENT DIAGNOSTICS
-    # ======================================================
-
-    for rank, doc in enumerate(
-        final_results,
+    for rank, document in enumerate(
+        merged_results,
         start=1,
     ):
 
         print(
-
             f"[Hybrid Retrieval] "
-
             f"Top-{rank} "
-
-            f"doc_id={doc['doc_id']} "
-
-            f"dense={doc['dense_score']:.4f} "
-
-            f"bm25={doc['bm25_score']:.4f} "
-
-            f"hybrid={doc['hybrid_score']:.4f}"
-
+            f"doc_id={document['doc_id']} "
+            f"dense={document['dense_score']:.4f} "
+            f"bm25={document['bm25_score']:.4f} "
+            f"hybrid={document['hybrid_score']:.6f} "
+            f"dense_rank={document['dense_rank']} "
+            f"sparse_rank={document['sparse_rank']}"
         )
 
     # ======================================================
@@ -922,21 +580,12 @@ def hybrid_search(
             sparse_results,
 
         "merged_results":
-            final_results,
-
-        "candidate_k":
-            candidate_k,
+            merged_results,
 
         "fusion_method":
             fusion_method,
 
-        "dense_weight":
-            dense_weight,
-
-        "sparse_weight":
-            sparse_weight,
-
-        "rrf_k":
-            rrf_k,
+        "candidate_k":
+            candidate_k,
 
     }
