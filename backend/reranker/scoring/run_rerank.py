@@ -21,6 +21,19 @@ Confidence
         ↓
 Final Result
 
+CLI
+---
+python -m backend.reranker.scoring.run_rerank
+
+python -m backend.reranker.scoring.run_rerank \
+    --query "What is the Mars Orbiter Mission (MOM) and which organization developed it?"
+
+Optional:
+python -m backend.reranker.scoring.run_rerank \
+    --query "What is the Mars Orbiter Mission (MOM) and which organization developed it?" \
+    --top-k 3 \
+    --max-sentences 3
+
 Optimization #4
 ---------------
 Reuse CrossEncoder scores produced by MS-ARC.
@@ -33,7 +46,8 @@ and Phase 10.2.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import argparse
+from typing import Any, Dict, List, Optional
 
 
 from backend.retrieval.run_retrieval import (
@@ -68,18 +82,20 @@ from backend.reranker.scoring.confidence.confidence_score import (
     compute_confidence,
 )
 
-
+import argparse
 # ==========================================================
 # CONFIGURATION
 # ==========================================================
 
-TOP_K_DOCUMENTS = 3
+DEFAULT_TOP_K_DOCUMENTS = 3
+
+DEFAULT_MAX_SENTENCES = 3
 
 MIN_CONFIDENCE = 0.40
 
 DEFAULT_QUERY = (
-    "Where did Chandrayaan-3 land on the Moon "
-    "and which organization developed the mission?"
+    "What is the Mars Orbiter Mission (MOM) "
+    "and which organization developed it?"
 )
 
 
@@ -91,9 +107,13 @@ def safe_float(
     value: Any,
     default: float = 0.0,
 ) -> float:
+    """
+    Safely convert a value to float.
+    """
 
     try:
         return float(value)
+
     except (
         TypeError,
         ValueError,
@@ -102,17 +122,146 @@ def safe_float(
 
 
 # ==========================================================
+# ARGUMENT PARSER
+# ==========================================================
+
+def parse_args(
+    argv: Optional[List[str]] = None,
+) -> argparse.Namespace:
+    """
+    Parse command-line arguments.
+
+    Example
+    -------
+    python -m backend.reranker.scoring.run_rerank \
+        --query "What is the Mars Orbiter Mission (MOM)?"
+    """
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the production retrieval, reranking, "
+            "evidence selection, fusion and validation pipeline."
+        )
+    )
+
+    parser.add_argument(
+        "--query",
+        type=str,
+        default=DEFAULT_QUERY,
+        help=(
+            "Question to run through the RAG pipeline. "
+            "If omitted, the default MOM question is used."
+        ),
+    )
+
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=DEFAULT_TOP_K_DOCUMENTS,
+        help=(
+            "Number of validated documents passed to "
+            "the answer generation stage. "
+            f"Default: {DEFAULT_TOP_K_DOCUMENTS}"
+        ),
+    )
+
+    parser.add_argument(
+        "--max-sentences",
+        type=int,
+        default=DEFAULT_MAX_SENTENCES,
+        help=(
+            "Maximum number of evidence sentences selected "
+            "during question-aware generation. "
+            f"Default: {DEFAULT_MAX_SENTENCES}"
+        ),
+    )
+
+    return parser.parse_args(argv)
+
+
+# ==========================================================
+# QUERY NORMALIZATION
+# ==========================================================
+
+def normalize_query(
+    query: Optional[str],
+) -> str:
+    """
+    Normalize the incoming query.
+
+    Empty CLI input falls back to DEFAULT_QUERY.
+    """
+
+    if query is None:
+        return DEFAULT_QUERY
+
+    normalized = query.strip()
+
+    if not normalized:
+        return DEFAULT_QUERY
+
+    return normalized
+
+
+# ==========================================================
 # MAIN PIPELINE
 # ==========================================================
 
 def run_pipeline(
     query: str,
+    top_k_documents: int = DEFAULT_TOP_K_DOCUMENTS,
+    max_sentences: int = DEFAULT_MAX_SENTENCES,
 ) -> List[Dict]:
+    """
+    Execute the complete production RAG pipeline.
 
-    query = (
-        query.strip()
-        if query
-        else DEFAULT_QUERY
+    Parameters
+    ----------
+    query:
+        User question.
+
+    top_k_documents:
+        Number of validated documents passed downstream.
+
+    max_sentences:
+        Maximum number of evidence sentences selected.
+    """
+
+    # ======================================================
+    # QUERY
+    # ======================================================
+
+    query = normalize_query(query)
+
+    if top_k_documents < 1:
+        raise ValueError(
+            "top_k_documents must be >= 1."
+        )
+
+    if max_sentences < 1:
+        raise ValueError(
+            "max_sentences must be >= 1."
+        )
+
+    print()
+    print("=" * 70)
+    print("RERANKING / ANSWER PIPELINE")
+    print("=" * 70)
+
+    print()
+    print(
+        "Query:",
+        query,
+    )
+
+    print(
+        "Top-K Documents:",
+        top_k_documents,
+    )
+
+    print(
+        "Max Evidence Sentences:",
+        max_sentences,
     )
 
     # ======================================================
@@ -124,10 +273,25 @@ def run_pipeline(
         query
     )
 
+    if not isinstance(
+        retrieval_result,
+        dict,
+    ):
+        raise RuntimeError(
+            "Retrieval pipeline returned "
+            "an invalid result."
+        )
+
     retrieved_docs = retrieval_result.get(
         "documents",
         [],
     )
+
+    if not isinstance(
+        retrieved_docs,
+        list,
+    ):
+        retrieved_docs = []
 
     retrieval_confidence = safe_float(
         retrieval_result.get(
@@ -192,31 +356,42 @@ def run_pipeline(
         )
 
     # ======================================================
-    # OPTIMIZATION #4
-    # Verify MS-ARC scores
+    # NO DOCUMENTS
     # ======================================================
 
-    if retrieved_docs:
+    if not retrieved_docs:
 
-        missing_scores = [
-            doc
-            for doc in retrieved_docs
-            if "rerank_score" not in doc
-        ]
-
-        if missing_scores:
-
-            raise RuntimeError(
-                "Optimization #4 failed: "
-                "MS-ARC did not propagate "
-                "rerank_score to downstream "
-                "documents."
-            )
-
+        print()
         print(
-            "[Optimization #4] "
-            "MS-ARC rerank scores available."
+            "[Pipeline] No documents retrieved."
         )
+
+        return []
+
+    # ======================================================
+    # OPTIMIZATION #4
+    # VERIFY MS-ARC SCORES
+    # ======================================================
+
+    missing_scores = [
+        doc
+        for doc in retrieved_docs
+        if "rerank_score" not in doc
+    ]
+
+    if missing_scores:
+
+        raise RuntimeError(
+            "Optimization #4 failed: "
+            "MS-ARC did not propagate "
+            "rerank_score to downstream "
+            "documents."
+        )
+
+    print(
+        "[Optimization #4] "
+        "MS-ARC rerank scores available."
+    )
 
     # ======================================================
     # STEP 2
@@ -227,6 +402,12 @@ def run_pipeline(
         query,
         retrieved_docs,
     )
+
+    if not isinstance(
+        ranked_docs,
+        list,
+    ):
+        ranked_docs = []
 
     print(
         "Ranked Docs:",
@@ -243,6 +424,12 @@ def run_pipeline(
         ranked_docs,
     )
 
+    if not isinstance(
+        validated_docs,
+        list,
+    ):
+        validated_docs = []
+
     print(
         "Validated Docs:",
         len(validated_docs),
@@ -255,11 +442,12 @@ def run_pipeline(
 
     top_docs = select_top_k(
         validated_docs,
-        k=TOP_K_DOCUMENTS,
+        k=top_k_documents,
     )
 
     if not top_docs:
 
+        print()
         print(
             "No usable documents."
         )
@@ -272,6 +460,39 @@ def run_pipeline(
     )
 
     # ======================================================
+    # PRINT TOP DOCUMENT DEBUG
+    # ======================================================
+
+    print()
+    print(
+        "[Pipeline] Final Context Documents:"
+    )
+
+    for rank, doc in enumerate(
+        top_docs,
+        start=1,
+    ):
+
+        print()
+
+        print(
+            f"[{rank}] "
+            f"doc_id={doc.get('doc_id')} "
+            f"source={doc.get('source')} "
+            f"domain={doc.get('domain')}"
+        )
+
+        print(
+            f"    rerank_score="
+            f"{safe_float(doc.get('rerank_score')):.4f}"
+        )
+
+        print(
+            f"    context_score="
+            f"{safe_float(doc.get('context_score')):.4f}"
+        )
+
+    # ======================================================
     # STEP 5
     # QUESTION-AWARE GENERATION
     # ======================================================
@@ -279,8 +500,14 @@ def run_pipeline(
     generation = generate_answer(
         query=query,
         documents=top_docs,
-        max_sentences=3,
+        max_sentences=max_sentences,
     )
+
+    if not isinstance(
+        generation,
+        dict,
+    ):
+        generation = {}
 
     # ======================================================
     # OPTIMIZATION #17
@@ -291,6 +518,12 @@ def run_pipeline(
         "sentence_embeddings",
         {},
     )
+
+    if not isinstance(
+        sentence_embeddings,
+        dict,
+    ):
+        sentence_embeddings = {}
 
     print()
     print(
@@ -329,35 +562,63 @@ def run_pipeline(
         generation
     )
 
+    if not isinstance(
+        fusion_result,
+        dict,
+    ):
+        fusion_result = {}
+
     answer = fusion_result.get(
         "paragraph",
         "",
-    ).strip()
+    )
 
-    # Fallback to Phase 10.1 if fusion somehow
-    # produces no paragraph.
+    if not isinstance(
+        answer,
+        str,
+    ):
+        answer = str(answer)
+
+    answer = answer.strip()
+
+    # ======================================================
+    # FALLBACK TO PHASE 10.1
+    # ======================================================
+
     if not answer:
 
         answer = generation.get(
             "answer",
             "",
-        ).strip()
+        )
+
+        if not isinstance(
+            answer,
+            str,
+        ):
+            answer = str(answer)
+
+        answer = answer.strip()
 
     # ======================================================
     # OPTIMIZATION #17 DEBUG
     # ======================================================
 
     embedding_reuses = int(
-        fusion_result.get(
-            "embedding_reuses",
-            0,
+        safe_float(
+            fusion_result.get(
+                "embedding_reuses",
+                0,
+            )
         )
     )
 
     embedding_fallbacks = int(
-        fusion_result.get(
-            "embedding_fallbacks",
-            0,
+        safe_float(
+            fusion_result.get(
+                "embedding_fallbacks",
+                0,
+            )
         )
     )
 
@@ -383,6 +644,12 @@ def run_pipeline(
         answer,
         top_docs,
     )
+
+    if not isinstance(
+        validation,
+        dict,
+    ):
+        validation = {}
 
     answer_confidence = safe_float(
         validation.get(
@@ -449,6 +716,7 @@ def run_pipeline(
 
     if confidence < MIN_CONFIDENCE:
 
+        print()
         print(
             "Low overall confidence."
         )
@@ -506,6 +774,12 @@ def run_pipeline(
         [],
     )
 
+    if not isinstance(
+        selected_evidence,
+        list,
+    ):
+        selected_evidence = []
+
     # ======================================================
     # FINAL RESULT
     # ======================================================
@@ -514,6 +788,8 @@ def run_pipeline(
         "text": answer,
 
         "answer": answer,
+
+        "query": query,
 
         "rerank_score": safe_float(
             top_docs[0].get(
@@ -634,6 +910,12 @@ def run_pipeline(
 
     print()
     print(
+        "Query:",
+        query,
+    )
+
+    print()
+    print(
         "Answer:",
         answer,
     )
@@ -684,12 +966,13 @@ def run_pipeline(
     for item in selected_evidence:
 
         print()
+
         print(
             f"[{item.get('rank')}] "
             f"similarity="
-            f"{item.get('similarity', 0.0):.4f} "
+            f"{safe_float(item.get('similarity')):.4f} "
             f"relevance="
-            f"{item.get('relevance', 0.0):.4f} "
+            f"{safe_float(item.get('relevance')):.4f} "
             f"targets="
             f"{item.get('targets', [])}"
         )
@@ -726,8 +1009,27 @@ def run_pipeline(
 
 if __name__ == "__main__":
 
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run the production RAG retrieval, "
+            "reranking, evidence selection, "
+            "and answer validation pipeline."
+        )
+    )
+
+    parser.add_argument(
+        "--query",
+        type=str,
+        default=DEFAULT_QUERY,
+        help=(
+            "Question to send through the RAG pipeline."
+        ),
+    )
+
+    args = parser.parse_args()
+
     result = run_pipeline(
-        DEFAULT_QUERY
+        args.query
     )
 
     print()
@@ -823,6 +1125,7 @@ if __name__ == "__main__":
             )
         )
 
+        print()
         print(
             "Selected Evidence:"
         )
