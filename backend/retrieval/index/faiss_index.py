@@ -1,32 +1,40 @@
 from __future__ import annotations
 
-import numpy as np
+from typing import Any, Dict, Tuple
+
 import faiss
+import numpy as np
 
 
 # ==========================================================
-# CONFIGURATION
+# INDEX CONFIGURATION
 # ==========================================================
 
-DEFAULT_INDEX_TYPE = "flat"
-
-SUPPORTED_INDEX_TYPES = {
-    "flat",
-    "hnsw",
-}
+DEFAULT_HNSW_M = 64
+DEFAULT_HNSW_EF_SEARCH = 32
+DEFAULT_HNSW_EF_CONSTRUCTION = 40
 
 
 # ==========================================================
-# VALIDATION
+# BUILD FAISS INDEX
 # ==========================================================
 
-def _prepare_embeddings(embeddings) -> np.ndarray:
+def build_faiss(
+    embeddings,
+    index_type: str = "flat",
+    hnsw_m: int = DEFAULT_HNSW_M,
+    hnsw_ef_search: int = DEFAULT_HNSW_EF_SEARCH,
+    hnsw_ef_construction: int = DEFAULT_HNSW_EF_CONSTRUCTION,
+):
     """
-    Convert embeddings to float32 numpy array.
+    Build a FAISS inner-product index.
 
-    Expected shape:
+    Supported index types:
 
-        (number_of_documents, embedding_dimension)
+        flat
+        hnsw
+
+    Embeddings are expected to already be L2-normalized.
     """
 
     embeddings = np.asarray(
@@ -36,8 +44,8 @@ def _prepare_embeddings(embeddings) -> np.ndarray:
 
     if embeddings.ndim != 2:
         raise ValueError(
-            "Embeddings must be a 2D array with shape "
-            "(num_documents, embedding_dimension)."
+            "Embeddings must be a 2D array. "
+            f"Received shape: {embeddings.shape}"
         )
 
     if embeddings.shape[0] == 0:
@@ -45,94 +53,28 @@ def _prepare_embeddings(embeddings) -> np.ndarray:
             "Cannot build FAISS index from zero embeddings."
         )
 
-    if embeddings.shape[1] == 0:
-        raise ValueError(
-            "Embedding dimension cannot be zero."
-        )
-
-    return np.ascontiguousarray(
-        embeddings,
-        dtype=np.float32,
-    )
-
-
-# ==========================================================
-# BUILD FAISS INDEX
-# ==========================================================
-
-def build_faiss(
-    embeddings,
-    index_type: str = DEFAULT_INDEX_TYPE,
-    hnsw_m: int = 32,
-    hnsw_ef_construction: int = 40,
-    hnsw_ef_search: int = 32,
-):
-    """
-    Build a FAISS index.
-
-    Supported index types:
-
-        flat
-            Exact Inner Product search.
-
-        hnsw
-            Approximate HNSW Inner Product search.
-
-    The project uses normalized BGE embeddings, therefore
-    Inner Product corresponds to cosine similarity.
-
-    Parameters
-    ----------
-    embeddings:
-        Normalized document embeddings.
-
-    index_type:
-        "flat" or "hnsw".
-
-    hnsw_m:
-        HNSW graph connectivity parameter.
-
-    hnsw_ef_construction:
-        HNSW construction-time search depth.
-
-    hnsw_ef_search:
-        HNSW query-time search depth.
-    """
+    dimension = embeddings.shape[1]
 
     index_type = (
         index_type
-        or DEFAULT_INDEX_TYPE
+        or "flat"
     ).lower().strip()
 
-    if index_type not in SUPPORTED_INDEX_TYPES:
-        raise ValueError(
-            f"Unsupported FAISS index type: "
-            f"{index_type}. "
-            f"Expected one of "
-            f"{sorted(SUPPORTED_INDEX_TYPES)}."
-        )
-
-    embeddings = _prepare_embeddings(
-        embeddings
-    )
-
-    dimension = embeddings.shape[1]
-
     print(
-        f"[FAISS] Index type        : {index_type}"
+        f"[FAISS] Index type             : {index_type}"
     )
 
     print(
-        f"[FAISS] Embedding dimension: {dimension}"
+        f"[FAISS] Embedding dimension    : {dimension}"
     )
 
     print(
-        f"[FAISS] Embedding count   : "
+        f"[FAISS] Embedding count        : "
         f"{len(embeddings)}"
     )
 
     # ------------------------------------------------------
-    # EXACT FLAT INDEX
+    # FLAT
     # ------------------------------------------------------
 
     if index_type == "flat":
@@ -142,23 +84,31 @@ def build_faiss(
         )
 
     # ------------------------------------------------------
-    # HNSW INDEX
+    # HNSW
     # ------------------------------------------------------
 
-    else:
+    elif index_type == "hnsw":
 
         index = faiss.IndexHNSWFlat(
             dimension,
-            int(hnsw_m),
+            hnsw_m,
             faiss.METRIC_INNER_PRODUCT,
         )
 
-        index.hnsw.efConstruction = int(
+        index.hnsw.efSearch = (
+            hnsw_ef_search
+        )
+
+        index.hnsw.efConstruction = (
             hnsw_ef_construction
         )
 
-        index.hnsw.efSearch = int(
-            hnsw_ef_search
+    else:
+
+        raise ValueError(
+            "Unsupported FAISS index type: "
+            f"{index_type}. "
+            "Supported types: flat, hnsw."
         )
 
     # ------------------------------------------------------
@@ -170,7 +120,7 @@ def build_faiss(
     )
 
     print(
-        f"[FAISS] Indexed vectors  : "
+        f"[FAISS] Indexed vectors       : "
         f"{index.ntotal}"
     )
 
@@ -187,28 +137,30 @@ def search_faiss(
     k: int = 5,
 ):
     """
-    Search a FAISS index.
+    Search the FAISS index.
 
     Returns
     -------
-
     scores:
-        Similarity scores.
+        Inner-product similarity scores.
 
     indices:
-        Document ids.
+        FAISS row indices.
 
-    For normalized embeddings using Inner Product,
-    scores correspond to cosine similarity.
+    Important:
+        FAISS indices are dataset ROW indices in this
+        project. They must not automatically be treated
+        as the dataset's `id` field because dataset IDs
+        are not globally unique.
     """
 
     if k <= 0:
         return (
-            np.array(
+            np.asarray(
                 [],
                 dtype=np.float32,
             ),
-            np.array(
+            np.asarray(
                 [],
                 dtype=np.int64,
             ),
@@ -219,7 +171,12 @@ def search_faiss(
         dtype=np.float32,
     )
 
+    # ------------------------------------------------------
+    # Normalize query shape
+    # ------------------------------------------------------
+
     if query_embedding.ndim == 1:
+
         query_embedding = (
             query_embedding.reshape(
                 1,
@@ -229,31 +186,22 @@ def search_faiss(
 
     if query_embedding.ndim != 2:
         raise ValueError(
-            "Query embedding must be a 1D or 2D array."
+            "Query embedding must be 1D or 2D. "
+            f"Received shape: {query_embedding.shape}"
         )
 
-    query_embedding = np.ascontiguousarray(
-        query_embedding,
-        dtype=np.float32,
-    )
+    if query_embedding.shape[0] != 1:
+        raise ValueError(
+            "search_faiss expects exactly one "
+            "query embedding."
+        )
 
     if query_embedding.shape[1] != index.d:
         raise ValueError(
-            f"Query embedding dimension "
-            f"{query_embedding.shape[1]} does not match "
-            f"FAISS dimension {index.d}."
-        )
-
-    # HNSW has a query-time efSearch parameter.
-    # Only set it when the index exposes HNSW.
-    if hasattr(index, "hnsw"):
-        index.hnsw.efSearch = max(
-            int(k),
-            int(getattr(
-                index.hnsw,
-                "efSearch",
-                32,
-            )),
+            "Query embedding dimension does not "
+            "match FAISS index dimension. "
+            f"Query={query_embedding.shape[1]}, "
+            f"Index={index.d}"
         )
 
     actual_k = min(
@@ -263,11 +211,11 @@ def search_faiss(
 
     if actual_k <= 0:
         return (
-            np.array(
+            np.asarray(
                 [],
                 dtype=np.float32,
             ),
-            np.array(
+            np.asarray(
                 [],
                 dtype=np.int64,
             ),
@@ -288,56 +236,175 @@ def search_faiss(
 # INDEX METADATA
 # ==========================================================
 
-def get_index_type(index) -> str:
+def get_index_metadata(
+    index,
+) -> Dict[str, Any]:
     """
-    Return a human-readable FAISS index type.
-    """
+    Return metadata describing the FAISS index.
 
-    if isinstance(
-        index,
-        faiss.IndexFlatIP,
-    ):
-        return "flat"
+    This is used by the Optimization #15 benchmark and
+    production diagnostics.
 
-    if isinstance(
-        index,
-        faiss.IndexHNSWFlat,
-    ):
-        return "hnsw"
-
-    return type(index).__name__
-
-
-def get_index_metadata(index) -> dict:
-    """
-    Return useful metadata for benchmarking/debugging.
+    The metadata intentionally records FAISS ROW capacity
+    (`ntotal`) rather than assuming that FAISS row numbers
+    equal dataset `id` values.
     """
 
-    metadata = {
-        "index_type": get_index_type(
-            index
-        ),
+    metadata: Dict[str, Any] = {
+        "index_type": "unknown",
         "dimension": int(
             index.d
         ),
         "ntotal": int(
             index.ntotal
         ),
-        "metric": "inner_product",
+        "metric": "unknown",
     }
 
-    if hasattr(index, "hnsw"):
+    # ------------------------------------------------------
+    # Metric
+    # ------------------------------------------------------
 
-        metadata.update({
-            "hnsw_m": int(
-                index.hnsw.nb_neighbors(0)
-            ),
-            "hnsw_ef_search": int(
-                index.hnsw.efSearch
-            ),
-            "hnsw_ef_construction": int(
-                index.hnsw.efConstruction
-            ),
-        })
+    metric_type = getattr(
+        index,
+        "metric_type",
+        None,
+    )
+
+    if metric_type == faiss.METRIC_INNER_PRODUCT:
+
+        metadata["metric"] = (
+            "inner_product"
+        )
+
+    elif metric_type == faiss.METRIC_L2:
+
+        metadata["metric"] = "l2"
+
+    # ------------------------------------------------------
+    # Index type
+    # ------------------------------------------------------
+
+    if isinstance(
+        index,
+        faiss.IndexFlatIP,
+    ):
+
+        metadata["index_type"] = "flat"
+
+    elif isinstance(
+        index,
+        faiss.IndexHNSWFlat,
+    ):
+
+        metadata["index_type"] = "hnsw"
+
+        metadata["hnsw_m"] = int(
+            index.hnsw.nb_neighbors(0)
+        )
+
+        metadata["hnsw_ef_search"] = int(
+            index.hnsw.efSearch
+        )
+
+        metadata["hnsw_ef_construction"] = int(
+            index.hnsw.efConstruction
+        )
 
     return metadata
+def get_faiss_metadata(index) -> Dict[str, Any]:
+    """
+    Backward-compatible wrapper for production retrieval code.
+
+    The canonical metadata function is get_index_metadata().
+    """
+    return get_index_metadata(index)
+
+# ==========================================================
+# INDEX VALIDATION
+# ==========================================================
+
+def validate_faiss_index(
+    index,
+    embeddings=None,
+) -> Tuple[bool, str]:
+    """
+    Validate basic consistency between a FAISS index and
+    the embedding matrix.
+
+    Checks:
+
+        - index exists
+        - embedding dimensionality matches
+        - vector count matches embeddings
+        - metric is inner product
+
+    Returns:
+
+        (True, "PASS")
+
+    or:
+
+        (False, reason)
+    """
+
+    if index is None:
+
+        return (
+            False,
+            "FAISS index is None.",
+        )
+
+    if embeddings is not None:
+
+        embeddings = np.asarray(
+            embeddings,
+            dtype=np.float32,
+        )
+
+        if embeddings.ndim != 2:
+
+            return (
+                False,
+                "Embeddings are not a 2D matrix.",
+            )
+
+        if index.d != embeddings.shape[1]:
+
+            return (
+                False,
+                "FAISS dimension does not match "
+                "embedding dimension: "
+                f"index={index.d}, "
+                f"embeddings={embeddings.shape[1]}",
+            )
+
+        if index.ntotal != len(
+            embeddings
+        ):
+
+            return (
+                False,
+                "FAISS vector count does not match "
+                "embedding rows: "
+                f"index={index.ntotal}, "
+                f"embeddings={len(embeddings)}",
+            )
+
+    metric_type = getattr(
+        index,
+        "metric_type",
+        None,
+    )
+
+    if metric_type != faiss.METRIC_INNER_PRODUCT:
+
+        return (
+            False,
+            "FAISS metric is not inner product.",
+        )
+
+    return (
+        True,
+        "PASS",
+    )

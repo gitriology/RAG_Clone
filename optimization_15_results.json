@@ -1,6 +1,12 @@
 {
     "optimization": "Optimization #15",
     "experiment": "IndexFlatIP vs HNSW",
+    "id_alignment": {
+        "evaluation_ids_are": "dataset_id",
+        "faiss_results_are": "faiss_row_id",
+        "duplicate_dataset_ids": true,
+        "ground_truth_resolved_using": "exact_candidate_text"
+    },
     "evaluation_protocol": {
         "top_k": 3,
         "same_dataset": true,
@@ -24,29 +30,104 @@
                 "ntotal": 2013,
                 "metric": "inner_product"
             },
-            "build_time_seconds": 0.004065699991770089,
-            "average_search_latency_ms": 0.38696333455542725,
+            "build_time_seconds": 0.002791999955661595,
+            "average_search_latency_ms": 0.37523466705655056,
             "top_k": 3,
             "queries_total": 5,
-            "recall_at_3": 0.0,
-            "precision_at_3": 0.0,
-            "hit_rate_at_3": 0.0,
-            "mrr_at_3": 0.0,
+            "recall_at_3": 1.0,
+            "precision_at_3": 0.3333333333333333,
+            "hit_rate_at_3": 1.0,
+            "mrr_at_3": 0.8666666666666668,
             "query_results": [
                 {
                     "query": "what is machine learning?",
-                    "relevant_doc_ids": [
+                    "relevant_dataset_ids": [
                         6
                     ],
-                    "retrieved_doc_ids": [
+                    "relevant_faiss_row_ids": [
+                        1885
+                    ],
+                    "retrieved_faiss_row_ids": [
                         1885,
                         1887,
-                        1886
+                        1891
                     ],
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "what is WHO?",
+                    "relevant_dataset_ids": [
+                        108
+                    ],
+                    "relevant_faiss_row_ids": [
+                        108
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        108,
+                        1877,
+                        41
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "what is ISRO?",
+                    "relevant_dataset_ids": [
+                        25
+                    ],
+                    "relevant_faiss_row_ids": [
+                        1547
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        1565,
+                        1543,
+                        1547
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.3333333333333333
+                },
+                {
+                    "query": "define machine learning",
+                    "relevant_dataset_ids": [
+                        6
+                    ],
+                    "relevant_faiss_row_ids": [
+                        1885
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        1885,
+                        1881,
+                        1891
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "difference between supervised and unsupervised learning",
+                    "relevant_dataset_ids": [
+                        114
+                    ],
+                    "relevant_faiss_row_ids": [
+                        1993
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        1993,
+                        1886,
+                        1994
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
                 }
             ]
         },
@@ -57,39 +138,114 @@
                 "dimension": 768,
                 "ntotal": 2013,
                 "metric": "inner_product",
-                "hnsw_m": 64,
+                "hnsw_m": 128,
                 "hnsw_ef_search": 32,
                 "hnsw_ef_construction": 40
             },
-            "build_time_seconds": 0.05876779998652637,
-            "average_search_latency_ms": 0.04801333028202255,
+            "build_time_seconds": 0.058186099980957806,
+            "average_search_latency_ms": 0.11033666630585989,
             "top_k": 3,
             "queries_total": 5,
-            "recall_at_3": 0.0,
-            "precision_at_3": 0.0,
-            "hit_rate_at_3": 0.0,
-            "mrr_at_3": 0.0,
+            "recall_at_3": 1.0,
+            "precision_at_3": 0.3333333333333333,
+            "hit_rate_at_3": 1.0,
+            "mrr_at_3": 0.8666666666666668,
             "query_results": [
                 {
                     "query": "what is machine learning?",
-                    "relevant_doc_ids": [
+                    "relevant_dataset_ids": [
                         6
                     ],
-                    "retrieved_doc_ids": [
+                    "relevant_faiss_row_ids": [
+                        1885
+                    ],
+                    "retrieved_faiss_row_ids": [
                         1885,
                         1887,
-                        1886
+                        1891
                     ],
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "what is WHO?",
+                    "relevant_dataset_ids": [
+                        108
+                    ],
+                    "relevant_faiss_row_ids": [
+                        108
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        108,
+                        41,
+                        1936
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "what is ISRO?",
+                    "relevant_dataset_ids": [
+                        25
+                    ],
+                    "relevant_faiss_row_ids": [
+                        1547
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        1565,
+                        1543,
+                        1547
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.3333333333333333
+                },
+                {
+                    "query": "define machine learning",
+                    "relevant_dataset_ids": [
+                        6
+                    ],
+                    "relevant_faiss_row_ids": [
+                        1885
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        1885,
+                        1881,
+                        1891
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "difference between supervised and unsupervised learning",
+                    "relevant_dataset_ids": [
+                        114
+                    ],
+                    "relevant_faiss_row_ids": [
+                        1993
+                    ],
+                    "retrieved_faiss_row_ids": [
+                        1993,
+                        1886,
+                        1994
+                    ],
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
                 }
             ]
         }
     },
     "comparison": {
-        "search_latency_speedup_hnsw_vs_flat": 8.059497899488894,
+        "search_latency_speedup_hnsw_vs_flat": 3.40081569998116,
         "recall_delta_hnsw_minus_flat": 0.0,
         "precision_delta_hnsw_minus_flat": 0.0,
         "hit_rate_delta_hnsw_minus_flat": 0.0,

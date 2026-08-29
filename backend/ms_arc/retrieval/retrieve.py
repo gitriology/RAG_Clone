@@ -1,18 +1,25 @@
 from __future__ import annotations
 
-import os
-import time
 from pathlib import Path
 
 import faiss
 
-from backend.retrieval.utils.load_data import load_data
-from backend.retrieval.index.faiss_index import build_faiss
+from backend.retrieval.utils.load_data import (
+    load_data,
+)
+
+from backend.retrieval.index.faiss_index import (
+    build_faiss,
+    get_faiss_metadata,
+)
+
 from backend.retrieval.lexical.bm25 import (
-    build_bm25,
     load_or_build_bm25,
 )
-from backend.retrieval.hybrid.hybrid_search import hybrid_search
+
+from backend.retrieval.hybrid.hybrid_search import (
+    hybrid_search,
+)
 
 from backend.ms_arc.state.retrieval_state import (
     RetrievalState,
@@ -21,31 +28,14 @@ from backend.ms_arc.state.retrieval_state import (
 
 
 # ==========================================================
-# STARTUP TIMING
-# ==========================================================
-
-_ENGINE_START_TIME = time.perf_counter()
-
-BM25_FORCE_REBUILD = (
-    os.getenv(
-        "OPT14_FORCE_BM25_REBUILD",
-        "0",
-    ).strip().lower()
-    in {
-        "1",
-        "true",
-        "yes",
-    }
-)
-
-
-# ==========================================================
 # PROJECT PATHS
 # ==========================================================
 
-PROJECT_ROOT = Path(
-    __file__
-).resolve().parents[3]
+PROJECT_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parents[3]
+)
 
 DATASET_PATH = (
     PROJECT_ROOT
@@ -75,9 +65,9 @@ BM25_CACHE_PATH = (
 # DATASET
 # ==========================================================
 
-_dataset_start = time.perf_counter()
-
-print("[MS-ARC] Loading Dataset...")
+print(
+    "[MS-ARC] Loading Dataset..."
+)
 
 data = load_data(
     str(DATASET_PATH)
@@ -88,27 +78,36 @@ texts = [
     for doc in data
 ]
 
+# ----------------------------------------------------------
+# IMPORTANT:
+#
+# FAISS returns ROW INDICES.
+#
+# The dataset `id` field is not globally unique.
+#
+# Therefore:
+#
+#     FAISS row 1885
+#
+# means:
+#
+#     data[1885]
+#
+# and should not be interpreted as:
+#
+#     dataset id == 1885
+#
+# ----------------------------------------------------------
+
 doc_lookup = {
     idx: doc
     for idx, doc in enumerate(data)
 }
 
-_dataset_time = (
-    time.perf_counter()
-    - _dataset_start
-)
-
-print(
-    f"[MS-ARC] Dataset loaded in "
-    f"{_dataset_time:.4f}s"
-)
-
 
 # ==========================================================
 # EMBEDDINGS
 # ==========================================================
-
-_embeddings_start = time.perf_counter()
 
 print(
     "[MS-ARC] Loading Cached Embeddings..."
@@ -120,45 +119,127 @@ from backend.retrieval.utils.load_embeddings import (
 
 embeddings = load_embeddings()
 
-_embeddings_time = (
-    time.perf_counter()
-    - _embeddings_start
+print(
+    f"[MS-ARC] Embeddings shape: "
+    f"{embeddings.shape}"
 )
 
-print(
-    f"[MS-ARC] Embeddings loaded in "
-    f"{_embeddings_time:.4f}s"
-)
+if embeddings.ndim != 2:
+
+    raise ValueError(
+        "Embeddings must be a 2-dimensional "
+        f"array. Received {embeddings.shape}"
+    )
 
 
 # ==========================================================
 # FAISS
 # ==========================================================
 
-_faiss_start = time.perf_counter()
+def _load_or_build_faiss():
 
-if FAISS_PATH.exists():
+    # ------------------------------------------------------
+    # EXISTING PERSISTED INDEX
+    # ------------------------------------------------------
+
+    if FAISS_PATH.exists():
+
+        print(
+            "[MS-ARC] Loading Existing FAISS Index..."
+        )
+
+        index = faiss.read_index(
+            str(FAISS_PATH)
+        )
+
+        metadata = get_faiss_metadata(
+            index
+        )
+
+        print(
+            "[MS-ARC] FAISS index type:",
+            metadata.get(
+                "index_type"
+            ),
+        )
+
+        print(
+            "[MS-ARC] FAISS dimension:",
+            metadata.get(
+                "dimension"
+            ),
+        )
+
+        print(
+            "[MS-ARC] FAISS vectors:",
+            metadata.get(
+                "ntotal"
+            ),
+        )
+
+        # --------------------------------------------------
+        # EMBEDDING / INDEX DIMENSION CHECK
+        # --------------------------------------------------
+
+        if index.d != embeddings.shape[1]:
+
+            raise RuntimeError(
+                "FAISS embedding dimension mismatch.\n"
+                f"FAISS index dimension: {index.d}\n"
+                f"Embedding dimension: {embeddings.shape[1]}\n"
+                "Rebuild the FAISS index."
+            )
+
+        # --------------------------------------------------
+        # EMBEDDING / INDEX COUNT CHECK
+        # --------------------------------------------------
+
+        if index.ntotal != len(
+            embeddings
+        ):
+
+            raise RuntimeError(
+                "FAISS vector count mismatch.\n"
+                f"FAISS vectors: {index.ntotal}\n"
+                f"Embedding rows: {len(embeddings)}\n"
+                "Rebuild the FAISS index."
+            )
+
+        # --------------------------------------------------
+        # DATASET / EMBEDDING COUNT CHECK
+        # --------------------------------------------------
+
+        if len(data) != len(
+            embeddings
+        ):
+
+            raise RuntimeError(
+                "Dataset / embedding alignment failure.\n"
+                f"Dataset documents: {len(data)}\n"
+                f"Embedding rows: {len(embeddings)}"
+            )
+
+        print(
+            "[MS-ARC] FAISS consistency checks: PASS"
+        )
+
+        return index
+
+    # ------------------------------------------------------
+    # INDEX DOES NOT EXIST
+    # ------------------------------------------------------
 
     print(
-        "[MS-ARC] "
-        "Loading Existing FAISS Index..."
+        "[MS-ARC] Existing FAISS index not found."
     )
-
-    faiss_index = faiss.read_index(
-        str(FAISS_PATH)
-    )
-
-    faiss_action = "loaded"
-
-else:
 
     print(
-        "[MS-ARC] "
-        "Building FAISS Index..."
+        "[MS-ARC] Building HNSW FAISS Index..."
     )
 
-    faiss_index = build_faiss(
-        embeddings
+    index = build_faiss(
+        embeddings,
+        index_type="hnsw",
     )
 
     FAISS_PATH.parent.mkdir(
@@ -167,21 +248,29 @@ else:
     )
 
     faiss.write_index(
-        faiss_index,
+        index,
         str(FAISS_PATH),
     )
 
-    faiss_action = "built"
+    print(
+        "[MS-ARC] HNSW FAISS index saved."
+    )
 
-_faiss_time = (
-    time.perf_counter()
-    - _faiss_start
+    return index
+
+
+faiss_index = _load_or_build_faiss()
+
+
+# ==========================================================
+# FAISS REPORT
+# ==========================================================
+
+faiss_metadata = get_faiss_metadata(
+    faiss_index
 )
 
-print(
-    f"[MS-ARC] FAISS {faiss_action} in "
-    f"{_faiss_time:.4f}s"
-)
+print()
 
 print(
     f"[MS-ARC] Dataset documents: "
@@ -198,92 +287,32 @@ print(
     f"{faiss_index.ntotal}"
 )
 
+print(
+    f"[MS-ARC] FAISS index type: "
+    f"{faiss_metadata.get('index_type')}"
+)
+
+print(
+    f"[MS-ARC] FAISS metric: "
+    f"{faiss_metadata.get('metric')}"
+)
+
 
 # ==========================================================
 # BM25
 # ==========================================================
 
-_bm25_start = time.perf_counter()
-
 print(
     "[MS-ARC] Initializing BM25..."
 )
 
-if BM25_FORCE_REBUILD:
-
-    # ------------------------------------------------------
-    # Optimization #14 benchmark baseline
-    #
-    # This reproduces the old behavior:
-    #
-    #     build_bm25(texts)
-    #
-    # No persistent cache is used.
-    # ------------------------------------------------------
-
-    print(
-        "[MS-ARC] "
-        "OPT14_FORCE_BM25_REBUILD=1"
-    )
-
-    print(
-        "[MS-ARC] "
-        "Forcing BM25 rebuild for baseline benchmark..."
-    )
-
-    bm25, tokenized = build_bm25(
-        texts
-    )
-
-    bm25_loaded_from_cache = False
-
-    bm25_mode = "forced_rebuild"
-
-else:
-
-    # ------------------------------------------------------
-    # Optimization #14 optimized path
-    #
-    # First run:
-    #
-    #     build -> save
-    #
-    # Later runs:
-    #
-    #     load cache -> reuse
-    # ------------------------------------------------------
-
-    (
-        bm25,
-        tokenized,
-        bm25_loaded_from_cache,
-    ) = load_or_build_bm25(
-        texts=texts,
-        cache_path=BM25_CACHE_PATH,
-    )
-
-    if bm25_loaded_from_cache:
-
-        bm25_mode = "cache"
-
-    else:
-
-        bm25_mode = "build_and_cache"
-
-
-_bm25_time = (
-    time.perf_counter()
-    - _bm25_start
-)
-
-print(
-    f"[MS-ARC] BM25 initialization "
-    f"completed in {_bm25_time:.4f}s"
-)
-
-print(
-    "[MS-ARC] BM25 mode:",
-    bm25_mode,
+(
+    bm25,
+    tokenized,
+    bm25_loaded_from_cache,
+) = load_or_build_bm25(
+    texts=texts,
+    cache_path=BM25_CACHE_PATH,
 )
 
 print(
@@ -298,63 +327,18 @@ print(
 
 
 # ==========================================================
-# ENGINE STARTUP SUMMARY
+# RETRIEVAL ENGINE READY
 # ==========================================================
-
-_ENGINE_STARTUP_TIME = (
-    time.perf_counter()
-    - _ENGINE_START_TIME
-)
-
-print()
-print(
-    "=================================================="
-)
-
-print(
-    "MS-ARC STARTUP SUMMARY"
-)
-
-print(
-    "=================================================="
-)
-
-print(
-    f"Dataset loading:      "
-    f"{_dataset_time:.4f}s"
-)
-
-print(
-    f"Embedding loading:    "
-    f"{_embeddings_time:.4f}s"
-)
-
-print(
-    f"FAISS initialization: "
-    f"{_faiss_time:.4f}s"
-)
-
-print(
-    f"BM25 initialization:  "
-    f"{_bm25_time:.4f}s"
-)
-
-print(
-    f"Total engine startup:  "
-    f"{_ENGINE_STARTUP_TIME:.4f}s"
-)
-
-print(
-    f"BM25 mode:             "
-    f"{bm25_mode}"
-)
-
-print(
-    "=================================================="
-)
 
 print(
     "[MS-ARC] Retrieval Engine Ready."
+)
+
+print(
+    "[MS-ARC] Production FAISS index:",
+    faiss_metadata.get(
+        "index_type"
+    ),
 )
 
 
@@ -366,9 +350,14 @@ def retrieve(
     state: RetrievalState,
     fusion_method: str = "minmax",
 ) -> RetrievalState:
-
     """
-    Performs hybrid retrieval.
+    Perform hybrid retrieval.
+
+    FAISS returns row indices into `data`.
+
+    Dataset `id` values are not used as FAISS row
+    identifiers because the dataset contains duplicate
+    IDs.
 
     Supported fusion methods:
 
@@ -387,11 +376,12 @@ def retrieve(
     }:
 
         raise ValueError(
-            f"Unsupported fusion method: "
+            "Unsupported fusion method: "
             f"{fusion_method}"
         )
 
     print()
+
     print(
         "[MS-ARC] Hybrid Retrieval"
     )
@@ -400,6 +390,10 @@ def retrieve(
         "[MS-ARC] Fusion method:",
         fusion_method,
     )
+
+    # ======================================================
+    # CANDIDATE DEPTH
+    # ======================================================
 
     candidate_k = state.debug.get(
         "candidate_k"
@@ -420,7 +414,6 @@ def retrieve(
         candidate_k=candidate_k,
 
         fusion_method=fusion_method,
-
     )
 
     dense_docs = []
@@ -428,7 +421,6 @@ def retrieve(
     sparse_docs = []
 
     merged_docs = []
-
 
     # ======================================================
     # DENSE RESULTS
@@ -438,8 +430,19 @@ def retrieve(
         "dense_results"
     ]:
 
+        doc_id = item[
+            "doc_id"
+        ]
+
+        if doc_id not in doc_lookup:
+
+            raise RuntimeError(
+                "FAISS returned an invalid "
+                f"document row index: {doc_id}"
+            )
+
         original = doc_lookup[
-            item["doc_id"]
+            doc_id
         ]
 
         dense_docs.append(
@@ -447,18 +450,27 @@ def retrieve(
             RetrievedDocument(
 
                 doc_id=str(
-                    item["doc_id"]
+                    doc_id
                 ),
 
-                text=item["text"],
+                text=item[
+                    "text"
+                ],
 
                 dense_score=float(
-                    item["dense_score"]
+                    item[
+                        "dense_score"
+                    ]
                 ),
 
                 sparse_score=0.0,
 
                 metadata={
+
+                    "dataset_id":
+                        original.get(
+                            "id"
+                        ),
 
                     "domain":
                         original.get(
@@ -486,12 +498,12 @@ def retrieve(
                     "sparse_rank":
                         None,
 
+                    "faiss_row":
+                        doc_id,
+
                 },
-
             )
-
         )
-
 
     # ======================================================
     # SPARSE RESULTS
@@ -501,8 +513,19 @@ def retrieve(
         "sparse_results"
     ]:
 
+        doc_id = item[
+            "doc_id"
+        ]
+
+        if doc_id not in doc_lookup:
+
+            raise RuntimeError(
+                "BM25 returned an invalid "
+                f"document row index: {doc_id}"
+            )
+
         original = doc_lookup[
-            item["doc_id"]
+            doc_id
         ]
 
         sparse_docs.append(
@@ -510,18 +533,27 @@ def retrieve(
             RetrievedDocument(
 
                 doc_id=str(
-                    item["doc_id"]
+                    doc_id
                 ),
 
-                text=item["text"],
+                text=item[
+                    "text"
+                ],
 
                 dense_score=0.0,
 
                 sparse_score=float(
-                    item["bm25_score"]
+                    item[
+                        "bm25_score"
+                    ]
                 ),
 
                 metadata={
+
+                    "dataset_id":
+                        original.get(
+                            "id"
+                        ),
 
                     "domain":
                         original.get(
@@ -549,12 +581,12 @@ def retrieve(
                             "sparse_rank"
                         ),
 
+                    "faiss_row":
+                        doc_id,
+
                 },
-
             )
-
         )
-
 
     # ======================================================
     # HYBRID RESULTS
@@ -564,8 +596,19 @@ def retrieve(
         "merged_results"
     ]:
 
+        doc_id = item[
+            "doc_id"
+        ]
+
+        if doc_id not in doc_lookup:
+
+            raise RuntimeError(
+                "Hybrid retrieval returned "
+                f"an invalid document row index: {doc_id}"
+            )
+
         original = doc_lookup[
-            item["doc_id"]
+            doc_id
         ]
 
         merged_docs.append(
@@ -573,20 +616,31 @@ def retrieve(
             RetrievedDocument(
 
                 doc_id=str(
-                    item["doc_id"]
+                    doc_id
                 ),
 
-                text=item["text"],
+                text=item[
+                    "text"
+                ],
 
                 dense_score=float(
-                    item["dense_score"]
+                    item[
+                        "dense_score"
+                    ]
                 ),
 
                 sparse_score=float(
-                    item["bm25_score"]
+                    item[
+                        "bm25_score"
+                    ]
                 ),
 
                 metadata={
+
+                    "dataset_id":
+                        original.get(
+                            "id"
+                        ),
 
                     "domain":
                         original.get(
@@ -602,7 +656,9 @@ def retrieve(
 
                     "hybrid_score":
                         float(
-                            item["hybrid_score"]
+                            item[
+                                "hybrid_score"
+                            ]
                         ),
 
                     "fusion_method":
@@ -618,27 +674,32 @@ def retrieve(
                             "sparse_rank"
                         ),
 
+                    "faiss_row":
+                        doc_id,
+
                 },
-
             )
-
         )
-
 
     # ======================================================
     # STORE STATE
     # ======================================================
 
-    state.dense_results = dense_docs
+    state.dense_results = (
+        dense_docs
+    )
 
-    state.sparse_results = sparse_docs
+    state.sparse_results = (
+        sparse_docs
+    )
 
-    state.merged_results = merged_docs
+    state.merged_results = (
+        merged_docs
+    )
 
     state.selected_documents = (
         merged_docs
     )
-
 
     # ======================================================
     # DEBUG
@@ -655,6 +716,24 @@ def retrieve(
     )
 
     state.debug[
+        "faiss_index_type"
+    ] = faiss_metadata.get(
+        "index_type"
+    )
+
+    state.debug[
+        "faiss_index_dimension"
+    ] = faiss_metadata.get(
+        "dimension"
+    )
+
+    state.debug[
+        "faiss_index_vectors"
+    ] = faiss_metadata.get(
+        "ntotal"
+    )
+
+    state.debug[
         "bm25_cache_path"
     ] = str(
         BM25_CACHE_PATH
@@ -663,19 +742,6 @@ def retrieve(
     state.debug[
         "bm25_loaded_from_cache"
     ] = bm25_loaded_from_cache
-
-    state.debug[
-        "bm25_mode"
-    ] = bm25_mode
-
-    state.debug[
-        "bm25_initialization_time"
-    ] = _bm25_time
-
-    state.debug[
-        "engine_startup_time"
-    ] = _ENGINE_STARTUP_TIME
-
 
     print(
         f"[MS-ARC] Retrieved "
@@ -688,8 +754,15 @@ def retrieve(
     )
 
     print(
-        "[MS-ARC] BM25 mode:",
-        bm25_mode,
+        "[MS-ARC] FAISS index used:",
+        faiss_metadata.get(
+            "index_type"
+        ),
+    )
+
+    print(
+        "[MS-ARC] BM25 cache reused:",
+        bm25_loaded_from_cache,
     )
 
     return state
@@ -734,9 +807,16 @@ if __name__ == "__main__":
     )
 
     print(
-        "BM25 mode:",
+        "FAISS index:",
         state.debug.get(
-            "bm25_mode"
+            "faiss_index_type"
+        ),
+    )
+
+    print(
+        "FAISS vectors:",
+        state.debug.get(
+            "faiss_index_vectors"
         ),
     )
 
@@ -747,31 +827,22 @@ if __name__ == "__main__":
         ),
     )
 
-    print(
-        "BM25 initialization:",
-        state.debug.get(
-            "bm25_initialization_time"
-        ),
-        "seconds",
-    )
-
-    print(
-        "Total engine startup:",
-        state.debug.get(
-            "engine_startup_time"
-        ),
-        "seconds",
-    )
-
     print()
 
     for doc in state.selected_documents:
 
         print(
+            "FAISS row:",
             doc.doc_id,
+            "| dataset id:",
             doc.metadata.get(
-                "fusion_method"
+                "dataset_id"
             ),
+            "| source:",
+            doc.metadata.get(
+                "source"
+            ),
+            "| hybrid:",
             doc.metadata.get(
                 "hybrid_score"
             ),

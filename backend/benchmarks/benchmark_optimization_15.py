@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -50,61 +51,227 @@ RESULT_PATH = (
     / "optimization_15_results.json"
 )
 
+DATASET_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "all_domains.json"
+)
+
+FUSION_DATASET_PATH = (
+    PROJECT_ROOT
+    / "backend"
+    / "evaluation"
+    / "fusion_dataset.json"
+)
+
 
 # ==========================================================
-# EVALUATION DATASET
-# ==========================================================
-#
-# These are the same five evaluation queries and relevant
-# document ids used in the previous retrieval benchmark.
-#
-# The only variable in this benchmark is the FAISS index.
-#
+# ID HELPERS
 # ==========================================================
 
-EVALUATION_QUERIES = [
+def normalize_id(value):
 
-    {
-        "query":
-            "what is machine learning?",
+    if value is None:
+        return None
 
-        "relevant_doc_ids":
-            [6],
-    },
+    try:
+        return int(value)
 
-    {
-        "query":
-            "what is WHO?",
+    except (
+        TypeError,
+        ValueError,
+    ):
 
-        "relevant_doc_ids":
-            [108],
-    },
+        return str(value)
 
-    {
-        "query":
-            "what is ISRO?",
 
-        "relevant_doc_ids":
-            [25],
-    },
+def find_text_rows(
+    data,
+    text,
+):
+    """
+    Find exact dataset rows for a candidate document.
+    """
 
-    {
-        "query":
-            "define machine learning",
+    return [
 
-        "relevant_doc_ids":
-            [6],
-    },
+        row_index
 
-    {
-        "query":
-            "difference between supervised and unsupervised learning",
+        for row_index, document
+        in enumerate(data)
 
-        "relevant_doc_ids":
-            [114],
-    },
+        if document.get("text") == text
 
-]
+    ]
+
+
+def resolve_ground_truth(
+    data,
+    evaluation,
+):
+    """
+    Convert dataset-level ground truth into FAISS row IDs.
+
+    IMPORTANT:
+
+        evaluation["relevant_doc_ids"]
+
+    contains dataset IDs.
+
+    FAISS returns row positions.
+
+    Since dataset IDs are duplicated, exact candidate text
+    is used to identify the correct row.
+    """
+
+    relevant_ids = [
+
+        normalize_id(value)
+
+        for value
+        in evaluation.get(
+            "relevant_doc_ids",
+            [],
+        )
+
+    ]
+
+    candidates = evaluation.get(
+        "candidates",
+        [],
+    )
+
+    resolved_rows = []
+
+    for relevant_id in relevant_ids:
+
+        candidate_matches = [
+
+            candidate
+
+            for candidate in candidates
+
+            if normalize_id(
+                candidate.get("doc_id")
+            ) == relevant_id
+
+        ]
+
+        candidate_rows = []
+
+        for candidate in candidate_matches:
+
+            candidate_text = candidate.get(
+                "text",
+                "",
+            )
+
+            if not candidate_text:
+                continue
+
+            candidate_rows.extend(
+                find_text_rows(
+                    data,
+                    candidate_text,
+                )
+            )
+
+        candidate_rows = sorted(
+            set(candidate_rows)
+        )
+
+        if len(candidate_rows) != 1:
+
+            raise ValueError(
+
+                "\n"
+                "GROUND-TRUTH ID RESOLUTION FAILED\n"
+                f"Query: {evaluation['query']}\n"
+                f"Dataset ID: {relevant_id}\n"
+                f"Possible matching FAISS rows: "
+                f"{candidate_rows}\n\n"
+                "The dataset ID is duplicated and the "
+                "ground truth could not be uniquely resolved. "
+                "The benchmark will stop rather than guess."
+            )
+
+        resolved_rows.append(
+            candidate_rows[0]
+        )
+
+    return resolved_rows
+
+
+# ==========================================================
+# LOAD EVALUATION DATA
+# ==========================================================
+
+def load_evaluation_data():
+
+    with DATASET_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
+
+        data = json.load(
+            file
+        )
+
+    with FUSION_DATASET_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
+
+        fusion_dataset = json.load(
+            file
+        )
+
+    evaluations = []
+
+    for item in fusion_dataset:
+
+        if not item.get(
+            "relevant_doc_ids"
+        ):
+
+            continue
+
+        faiss_rows = resolve_ground_truth(
+            data,
+            item,
+        )
+
+        evaluations.append({
+
+            "query":
+                item["query"],
+
+            "relevant_dataset_ids":
+                [
+                    normalize_id(value)
+                    for value
+                    in item[
+                        "relevant_doc_ids"
+                    ]
+                ],
+
+            "relevant_faiss_rows":
+                faiss_rows,
+
+        })
+
+    if not evaluations:
+
+        raise ValueError(
+            "No evaluation queries with ground truth "
+            "were found."
+        )
+
+    return (
+        data,
+        evaluations,
+    )
 
 
 # ==========================================================
@@ -115,6 +282,7 @@ def recall_at_k(
     retrieved_ids,
     relevant_ids,
 ):
+
     retrieved = set(
         retrieved_ids
     )
@@ -141,6 +309,7 @@ def precision_at_k(
     retrieved_ids,
     relevant_ids,
 ):
+
     if not retrieved_ids:
         return 0.0
 
@@ -149,9 +318,14 @@ def precision_at_k(
     )
 
     hits = sum(
+
         1
-        for doc_id in retrieved_ids
+
+        for doc_id
+        in retrieved_ids
+
         if doc_id in relevant
+
     )
 
     return float(
@@ -165,6 +339,7 @@ def hit_rate_at_k(
     retrieved_ids,
     relevant_ids,
 ):
+
     relevant = set(
         relevant_ids
     )
@@ -181,6 +356,7 @@ def mrr_at_k(
     retrieved_ids,
     relevant_ids,
 ):
+
     relevant = set(
         relevant_ids
     )
@@ -214,7 +390,7 @@ def build_index(
 
         index_type=index_type,
 
-        hnsw_m=32,
+        hnsw_m=64,
 
         hnsw_ef_construction=40,
 
@@ -227,7 +403,10 @@ def build_index(
         - start
     )
 
-    return index, elapsed
+    return (
+        index,
+        elapsed,
+    )
 
 
 # ==========================================================
@@ -309,6 +488,7 @@ def measure_search_latency(
 def evaluate_quality(
     index,
     query_embeddings,
+    evaluations,
 ):
 
     query_results = []
@@ -322,7 +502,7 @@ def evaluate_quality(
     mrrs = []
 
     for evaluation, query_embedding in zip(
-        EVALUATION_QUERIES,
+        evaluations,
         query_embeddings,
     ):
 
@@ -336,56 +516,56 @@ def evaluate_quality(
 
         )
 
-        retrieved_ids = [
+        retrieved_rows = [
 
-            int(doc_id)
+            int(row)
 
-            for doc_id in indices
+            for row in indices
 
-            if int(doc_id) >= 0
+            if int(row) >= 0
 
         ]
 
-        relevant_ids = [
+        relevant_rows = [
 
-            int(doc_id)
+            int(row)
 
-            for doc_id
+            for row
             in evaluation[
-                "relevant_doc_ids"
+                "relevant_faiss_rows"
             ]
 
         ]
 
         recall = recall_at_k(
 
-            retrieved_ids,
+            retrieved_rows,
 
-            relevant_ids,
+            relevant_rows,
 
         )
 
         precision = precision_at_k(
 
-            retrieved_ids,
+            retrieved_rows,
 
-            relevant_ids,
+            relevant_rows,
 
         )
 
         hit_rate = hit_rate_at_k(
 
-            retrieved_ids,
+            retrieved_rows,
 
-            relevant_ids,
+            relevant_rows,
 
         )
 
         mrr = mrr_at_k(
 
-            retrieved_ids,
+            retrieved_rows,
 
-            relevant_ids,
+            relevant_rows,
 
         )
 
@@ -410,11 +590,16 @@ def evaluate_quality(
             "query":
                 evaluation["query"],
 
-            "relevant_doc_ids":
-                relevant_ids,
+            "relevant_dataset_ids":
+                evaluation[
+                    "relevant_dataset_ids"
+                ],
 
-            "retrieved_doc_ids":
-                retrieved_ids,
+            "relevant_faiss_row_ids":
+                relevant_rows,
+
+            "retrieved_faiss_row_ids":
+                retrieved_rows,
 
             "recall_at_3":
                 recall,
@@ -465,6 +650,7 @@ def evaluate_quality(
 def benchmark_index(
     embeddings,
     query_embeddings,
+    evaluations,
     index_type,
 ):
 
@@ -481,10 +667,6 @@ def benchmark_index(
         "--------------------------------------------------"
     )
 
-    # ------------------------------------------------------
-    # BUILD
-    # ------------------------------------------------------
-
     index, build_time = build_index(
 
         embeddings,
@@ -497,10 +679,6 @@ def benchmark_index(
         index
     )
 
-    # ------------------------------------------------------
-    # SEARCH LATENCY
-    # ------------------------------------------------------
-
     search_latency_ms = (
         measure_search_latency(
 
@@ -511,15 +689,13 @@ def benchmark_index(
         )
     )
 
-    # ------------------------------------------------------
-    # QUALITY
-    # ------------------------------------------------------
-
     quality = evaluate_quality(
 
         index,
 
         query_embeddings,
+
+        evaluations,
 
     )
 
@@ -543,7 +719,7 @@ def benchmark_index(
             TOP_K,
 
         "queries_total":
-            len(EVALUATION_QUERIES),
+            len(evaluations),
 
         **quality,
 
@@ -593,34 +769,46 @@ def select_winner(
 
     flat_quality = (
 
-        flat_result["recall_at_3"],
+        flat_result[
+            "recall_at_3"
+        ],
 
-        flat_result["precision_at_3"],
+        flat_result[
+            "precision_at_3"
+        ],
 
-        flat_result["hit_rate_at_3"],
+        flat_result[
+            "hit_rate_at_3"
+        ],
 
-        flat_result["mrr_at_3"],
+        flat_result[
+            "mrr_at_3"
+        ],
 
     )
 
     hnsw_quality = (
 
-        hnsw_result["recall_at_3"],
+        hnsw_result[
+            "recall_at_3"
+        ],
 
-        hnsw_result["precision_at_3"],
+        hnsw_result[
+            "precision_at_3"
+        ],
 
-        hnsw_result["hit_rate_at_3"],
+        hnsw_result[
+            "hit_rate_at_3"
+        ],
 
-        hnsw_result["mrr_at_3"],
+        hnsw_result[
+            "mrr_at_3"
+        ],
 
     )
 
     # ------------------------------------------------------
     # Quality has priority.
-    #
-    # We do NOT choose HNSW simply because it is faster.
-    # An approximate index should not replace the exact
-    # index if retrieval quality drops.
     # ------------------------------------------------------
 
     if hnsw_quality > flat_quality:
@@ -632,7 +820,7 @@ def select_winner(
         return "flat"
 
     # ------------------------------------------------------
-    # Equal quality -> choose faster search.
+    # Equal quality -> faster index wins.
     # ------------------------------------------------------
 
     if (
@@ -683,25 +871,61 @@ def main():
     )
 
     print(
-        f"Queries: "
-        f"{len(EVALUATION_QUERIES)}"
+        f"Search runs: {SEARCH_RUNS}"
     )
 
     print(
-        "Same embeddings: YES"
+        f"Warmup runs: {WARMUP_RUNS}"
+    )
+
+    # ======================================================
+    # LOAD DATASET + GROUND TRUTH
+    # ======================================================
+
+    print()
+    print(
+        "Resolving evaluation ground truth..."
+    )
+
+    (
+        data,
+        evaluations,
+    ) = load_evaluation_data()
+
+    print(
+        f"Dataset documents: "
+        f"{len(data)}"
     )
 
     print(
-        "Same queries: YES"
+        f"Evaluation queries: "
+        f"{len(evaluations)}"
     )
 
+    print()
     print(
-        "Only index type changes: YES"
+        "Ground-truth FAISS row mapping:"
     )
 
-    # ------------------------------------------------------
+    for evaluation in evaluations:
+
+        print(
+            f"  {evaluation['query']}"
+        )
+
+        print(
+            f"    dataset IDs: "
+            f"{evaluation['relevant_dataset_ids']}"
+        )
+
+        print(
+            f"    FAISS rows: "
+            f"{evaluation['relevant_faiss_rows']}"
+        )
+
+    # ======================================================
     # LOAD EMBEDDINGS
-    # ------------------------------------------------------
+    # ======================================================
 
     print()
     print(
@@ -715,40 +939,123 @@ def main():
         f"{embeddings.shape}"
     )
 
-    # ------------------------------------------------------
+    if len(data) != embeddings.shape[0]:
+
+        raise ValueError(
+            "Dataset/embedding row mismatch."
+        )
+
+    # ======================================================
     # ENCODE QUERIES ONCE
-    # ------------------------------------------------------
+    # ======================================================
 
     print()
+
     print(
         "Encoding benchmark queries..."
     )
 
     query_texts = [
-
-        item["query"]
-
-        for item in EVALUATION_QUERIES
-
+        evaluation["query"]
+        for evaluation in evaluations
     ]
 
-    query_embeddings = encode_query(
+    # ------------------------------------------------------
+    # IMPORTANT:
+    #
+    # encode_query() in the current project is designed
+    # around a single query. Passing the complete list to it
+    # produces a single embedding instead of one embedding
+    # per query.
+    #
+    # Therefore encode each benchmark query individually
+    # here and stack the results.
+    #
+    # This keeps the benchmark deterministic and ensures:
+    #
+    #     len(query_embeddings)
+    #     ==
+    #     len(evaluations)
+    # ------------------------------------------------------
+
+    query_embeddings_list = []
+
+    for query_index, query_text in enumerate(
         query_texts
-    )
+    ):
 
-    query_embeddings = np.asarray(
-        query_embeddings,
-        dtype=np.float32,
-    )
-
-    if query_embeddings.ndim == 1:
-
-        query_embeddings = (
-            query_embeddings.reshape(
-                1,
-                -1,
-            )
+        print(
+            f"[Benchmark] Encoding query "
+            f"{query_index + 1}/{len(query_texts)}: "
+            f"{query_text}"
         )
+
+        embedding = encode_query(
+            query_text
+        )
+
+        embedding = np.asarray(
+            embedding,
+            dtype=np.float32,
+        )
+
+        # --------------------------------------------------
+        # Normalize shape.
+        #
+        # Accept:
+        #
+        #     (768,)
+        # or:
+        #     (1, 768)
+        # --------------------------------------------------
+
+        if embedding.ndim == 2:
+
+            if embedding.shape[0] != 1:
+
+                raise ValueError(
+                    "encode_query() returned an unexpected "
+                    f"batch shape for query {query_index}: "
+                    f"{embedding.shape}"
+                )
+
+            embedding = embedding[0]
+
+        elif embedding.ndim != 1:
+
+            raise ValueError(
+                "encode_query() returned an unexpected "
+                f"shape for query {query_index}: "
+                f"{embedding.shape}"
+            )
+
+        query_embeddings_list.append(
+            embedding
+        )
+
+    # ------------------------------------------------------
+    # Stack into:
+    #
+    #     (number_of_queries, embedding_dimension)
+    #
+    # Expected here:
+    #
+    #     (5, 768)
+    # ------------------------------------------------------
+
+    if not query_embeddings_list:
+
+        raise ValueError(
+            "No query embeddings were generated."
+        )
+
+    query_embeddings = np.stack(
+        query_embeddings_list,
+        axis=0,
+    ).astype(
+        np.float32,
+        copy=False,
+    )
 
     print(
         f"Query embedding shape: "
@@ -756,8 +1063,36 @@ def main():
     )
 
     # ------------------------------------------------------
-    # FLAT
+    # FINAL ALIGNMENT CHECK
     # ------------------------------------------------------
+
+    if len(query_embeddings) != len(
+        evaluations
+    ):
+
+        raise ValueError(
+            "Number of query embeddings does not "
+            "match evaluation queries: "
+            f"{len(query_embeddings)} embeddings "
+            f"for {len(evaluations)} evaluations."
+        )
+
+    print(
+        "[Benchmark] Query/evaluation alignment: PASS"
+    )
+
+    print(
+        f"[Benchmark] Query embeddings: "
+        f"{len(query_embeddings)}"
+    )
+
+    print(
+        f"[Benchmark] Evaluation queries: "
+        f"{len(evaluations)}"
+    )
+    # ======================================================
+    # FLAT
+    # ======================================================
 
     flat_result = benchmark_index(
 
@@ -765,13 +1100,15 @@ def main():
 
         query_embeddings,
 
+        evaluations,
+
         "flat",
 
     )
 
-    # ------------------------------------------------------
+    # ======================================================
     # HNSW
-    # ------------------------------------------------------
+    # ======================================================
 
     hnsw_result = benchmark_index(
 
@@ -779,13 +1116,15 @@ def main():
 
         query_embeddings,
 
+        evaluations,
+
         "hnsw",
 
     )
 
-    # ------------------------------------------------------
+    # ======================================================
     # WINNER
-    # ------------------------------------------------------
+    # ======================================================
 
     winner = select_winner(
 
@@ -795,11 +1134,9 @@ def main():
 
     )
 
-    # ------------------------------------------------------
-    # DELTAS
-    # ------------------------------------------------------
-
-    search_speedup = 0.0
+    # ======================================================
+    # SPEEDUP
+    # ======================================================
 
     flat_latency = (
         flat_result[
@@ -813,6 +1150,8 @@ def main():
         ]
     )
 
+    search_speedup = 0.0
+
     if hnsw_latency > 0:
 
         search_speedup = (
@@ -821,9 +1160,9 @@ def main():
             hnsw_latency
         )
 
-    # ------------------------------------------------------
-    # FINAL RESULT
-    # ------------------------------------------------------
+    # ======================================================
+    # RESULTS
+    # ======================================================
 
     results = {
 
@@ -832,6 +1171,24 @@ def main():
 
         "experiment":
             "IndexFlatIP vs HNSW",
+
+        "id_alignment":
+
+            {
+
+                "evaluation_ids_are":
+                    "dataset_id",
+
+                "faiss_results_are":
+                    "faiss_row_id",
+
+                "duplicate_dataset_ids":
+                    True,
+
+                "ground_truth_resolved_using":
+                    "exact_candidate_text",
+
+            },
 
         "evaluation_protocol": {
 
@@ -943,9 +1300,9 @@ def main():
 
     }
 
-    # ------------------------------------------------------
-    # PRINT SUMMARY
-    # ------------------------------------------------------
+    # ======================================================
+    # SUMMARY
+    # ======================================================
 
     print()
     print(
@@ -985,6 +1342,30 @@ def main():
     print()
 
     print(
+        f"Flat Precision@3: "
+        f"{flat_result['precision_at_3']:.4f}"
+    )
+
+    print(
+        f"HNSW Precision@3: "
+        f"{hnsw_result['precision_at_3']:.4f}"
+    )
+
+    print()
+
+    print(
+        f"Flat HitRate@3: "
+        f"{flat_result['hit_rate_at_3']:.4f}"
+    )
+
+    print(
+        f"HNSW HitRate@3: "
+        f"{hnsw_result['hit_rate_at_3']:.4f}"
+    )
+
+    print()
+
+    print(
         f"Flat MRR@3: "
         f"{flat_result['mrr_at_3']:.4f}"
     )
@@ -997,13 +1378,20 @@ def main():
     print()
 
     print(
+        f"HNSW search speedup: "
+        f"{search_speedup:.2f}x"
+    )
+
+    print()
+
+    print(
         "WINNER:",
         winner.upper(),
     )
 
-    # ------------------------------------------------------
+    # ======================================================
     # SAVE
-    # ------------------------------------------------------
+    # ======================================================
 
     with RESULT_PATH.open(
         "w",
@@ -1011,13 +1399,10 @@ def main():
     ) as file:
 
         json.dump(
-
             results,
-
             file,
-
             indent=4,
-
+            ensure_ascii=False,
         )
 
     print()

@@ -1,5 +1,9 @@
-from pathlib import Path
+from __future__ import annotations
+
 import json
+from pathlib import Path
+from collections import defaultdict
+
 import numpy as np
 
 from backend.retrieval.utils.load_data import load_data
@@ -26,353 +30,462 @@ EMBEDDINGS_PATH = (
     / "embeddings.npy"
 )
 
-
-# ==========================================================
-# LOAD DATASET
-# ==========================================================
-
-print("=" * 60)
-print("FAISS / GROUND-TRUTH ID ALIGNMENT CHECK")
-print("=" * 60)
-
-print()
-print("Dataset:")
-print(DATASET_PATH)
-
-data = load_data(
-    str(DATASET_PATH)
-)
-
-print(
-    "Dataset documents:",
-    len(data)
+FUSION_DATASET_PATH = (
+    PROJECT_ROOT
+    / "backend"
+    / "evaluation"
+    / "fusion_dataset.json"
 )
 
 
 # ==========================================================
-# LOAD EMBEDDINGS
+# HELPERS
 # ==========================================================
 
-print()
-print("Embeddings:")
-print(EMBEDDINGS_PATH)
+def normalize_id(value):
+    """
+    Normalize IDs for comparison.
 
-embeddings = np.load(
-    EMBEDDINGS_PATH
-)
+    Dataset IDs may be stored as integers while evaluation
+    files may contain strings.
+    """
 
-print(
-    "Embedding shape:",
-    embeddings.shape
-)
+    if value is None:
+        return None
 
-print(
-    "Embedding rows:",
-    len(embeddings)
-)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return str(value)
 
 
-# ==========================================================
-# CHECK BASIC ALIGNMENT
-# ==========================================================
+def build_id_to_rows(data):
+    """
+    Build:
 
-print()
-print("-" * 60)
-print("BASIC ALIGNMENT")
-print("-" * 60)
+        dataset id -> list of FAISS row indices
 
-print(
-    "Dataset length:",
-    len(data)
-)
+    Important:
+        dataset IDs are NOT assumed to be unique.
+    """
 
-print(
-    "Embedding rows:",
-    len(embeddings)
-)
-
-if len(data) == len(embeddings):
-    print(
-        "RESULT: PASS - same number of dataset rows and embeddings"
-    )
-else:
-    print(
-        "RESULT: FAIL - dataset rows and embeddings differ"
-    )
-
-
-# ==========================================================
-# INSPECT DOCUMENT IDs
-# ==========================================================
-
-print()
-print("-" * 60)
-print("DOCUMENT ID STRUCTURE")
-print("-" * 60)
-
-for i in range(
-    min(15, len(data))
-):
-
-    document = data[i]
-
-    print(
-        f"row={i} | "
-        f"doc_id={document.get('doc_id', '<NO doc_id FIELD>')} | "
-        f"keys={list(document.keys())}"
-    )
-
-
-# ==========================================================
-# TEST GROUND-TRUTH IDS
-# ==========================================================
-
-ground_truth_ids = [
-    6,
-    25,
-    108,
-    114,
-]
-
-print()
-print("-" * 60)
-print("GROUND-TRUTH ID CHECK")
-print("-" * 60)
-
-for doc_id in ground_truth_ids:
-
-    print()
-    print(
-        f"Checking ground-truth doc_id={doc_id}"
-    )
-
-    # ------------------------------------------------------
-    # Interpretation A:
-    # doc_id is directly the dataset/FAISS row number
-    # ------------------------------------------------------
-
-    if (
-        isinstance(doc_id, int)
-        and 0 <= doc_id < len(data)
-    ):
-
-        document = data[doc_id]
-
-        print(
-            "  As row index:"
-        )
-
-        print(
-            f"    dataset[{doc_id}] exists"
-        )
-
-        print(
-            f"    dataset[{doc_id}].doc_id = "
-            f"{document.get('doc_id', '<NO doc_id>')}"
-        )
-
-        print(
-            f"    embedding[{doc_id}] exists = YES"
-        )
-
-    else:
-
-        print(
-            "  As row index: INVALID"
-        )
-
-
-    # ------------------------------------------------------
-    # Interpretation B:
-    # doc_id is a field inside the dataset
-    # ------------------------------------------------------
-
-    matching_rows = []
+    mapping = defaultdict(list)
 
     for row_index, document in enumerate(data):
 
-        stored_id = document.get(
-            "doc_id"
+        document_id = normalize_id(
+            document.get("id")
         )
 
-        if stored_id == doc_id:
-            matching_rows.append(
+        mapping[document_id].append(
+            row_index
+        )
+
+    return dict(mapping)
+
+
+def find_text_rows(data, text):
+    """
+    Find dataset rows containing the exact evaluation text.
+    """
+
+    matches = []
+
+    for row_index, document in enumerate(data):
+
+        if document.get("text") == text:
+
+            matches.append(
                 row_index
             )
 
-        elif str(stored_id) == str(doc_id):
-            matching_rows.append(
-                row_index
-            )
+    return matches
 
-    print(
-        "  As document ID field:"
+
+def resolve_ground_truth(
+    data,
+    fusion_item,
+):
+    """
+    Resolve manually verified ground truth into FAISS row IDs.
+
+    The fusion dataset stores the original dataset `doc_id`
+    plus candidate text.
+
+    Because dataset IDs are duplicated across source documents,
+    the text is used to disambiguate the correct row.
+    """
+
+    relevant_ids = [
+        normalize_id(value)
+        for value in fusion_item.get(
+            "relevant_doc_ids",
+            [],
+        )
+    ]
+
+    candidates = fusion_item.get(
+        "candidates",
+        [],
     )
 
-    if matching_rows:
+    id_to_rows = build_id_to_rows(
+        data
+    )
+
+    resolved_rows = []
+
+    for relevant_id in relevant_ids:
+
+        matching_candidates = [
+
+            candidate
+
+            for candidate in candidates
+
+            if normalize_id(
+                candidate.get("doc_id")
+            ) == relevant_id
+
+        ]
+
+        # --------------------------------------------------
+        # First choice:
+        # exact candidate text match
+        # --------------------------------------------------
+
+        candidate_rows = []
+
+        for candidate in matching_candidates:
+
+            candidate_text = candidate.get(
+                "text",
+                "",
+            )
+
+            if not candidate_text:
+                continue
+
+            rows = find_text_rows(
+                data,
+                candidate_text,
+            )
+
+            candidate_rows.extend(
+                rows
+            )
+
+        candidate_rows = sorted(
+            set(candidate_rows)
+        )
+
+        if len(candidate_rows) == 1:
+
+            resolved_rows.append(
+                candidate_rows[0]
+            )
+
+            continue
+
+        # --------------------------------------------------
+        # If exact text did not uniquely resolve the ID,
+        # report the ambiguity instead of guessing.
+        # --------------------------------------------------
+
+        possible_rows = id_to_rows.get(
+            relevant_id,
+            [],
+        )
+
+        raise ValueError(
+            "\n"
+            f"Could not uniquely resolve ground-truth ID "
+            f"{relevant_id} for query "
+            f"'{fusion_item.get('query')}'.\n\n"
+            f"Dataset rows having id={relevant_id}: "
+            f"{possible_rows}\n"
+            f"Candidate matches: "
+            f"{candidate_rows}\n\n"
+            "The benchmark must not guess between duplicate "
+            "dataset IDs."
+        )
+
+    return resolved_rows
+
+
+# ==========================================================
+# MAIN
+# ==========================================================
+
+def main():
+
+    print()
+    print("=" * 70)
+    print(
+        "FAISS / DATASET ID ALIGNMENT CHECK"
+    )
+    print("=" * 70)
+
+    # ======================================================
+    # DATASET
+    # ======================================================
+
+    print()
+    print("Dataset:")
+    print(DATASET_PATH)
+
+    data = load_data(
+        str(DATASET_PATH)
+    )
+
+    print(
+        "Dataset documents:",
+        len(data),
+    )
+
+    # ======================================================
+    # EMBEDDINGS
+    # ======================================================
+
+    print()
+    print("Embeddings:")
+    print(EMBEDDINGS_PATH)
+
+    embeddings = np.load(
+        EMBEDDINGS_PATH
+    )
+
+    print(
+        "Embedding shape:",
+        embeddings.shape,
+    )
+
+    print(
+        "Embedding rows:",
+        len(embeddings),
+    )
+
+    # ======================================================
+    # BASIC ALIGNMENT
+    # ======================================================
+
+    print()
+    print("-" * 70)
+    print("BASIC DATASET / EMBEDDING ALIGNMENT")
+    print("-" * 70)
+
+    if len(data) == len(embeddings):
 
         print(
-            f"    MATCHING DATASET ROWS: "
-            f"{matching_rows}"
+            "PASS: dataset rows == embedding rows"
         )
 
     else:
 
         print(
-            "    NO MATCHING doc_id FIELD"
+            "FAIL: dataset rows != embedding rows"
         )
 
+        raise SystemExit(1)
 
-# ==========================================================
-# SPECIFIC CHECK FOR doc_id = 6
-# ==========================================================
-
-print()
-print("=" * 60)
-print("DETAILED CHECK: doc_id = 6")
-print("=" * 60)
-
-if len(data) > 6:
-
-    row_6 = data[6]
+    # ======================================================
+    # DOCUMENT ID STRUCTURE
+    # ======================================================
 
     print()
+    print("-" * 70)
+    print("DOCUMENT ID STRUCTURE")
+    print("-" * 70)
+
+    id_to_rows = build_id_to_rows(
+        data
+    )
+
+    unique_ids = len(
+        id_to_rows
+    )
+
+    duplicate_ids = {
+
+        document_id: rows
+
+        for document_id, rows
+        in id_to_rows.items()
+
+        if len(rows) > 1
+
+    }
+
     print(
-        "dataset[6]:"
+        "Unique dataset IDs:",
+        unique_ids,
     )
 
     print(
-        json.dumps(
-            row_6,
-            indent=2,
-            ensure_ascii=False,
-        )[:3000]
+        "Dataset IDs with duplicates:",
+        len(duplicate_ids),
     )
 
     print()
-    print(
-        "embedding[6] shape:",
-        embeddings[6].shape
-    )
 
-else:
+    if duplicate_ids:
 
-    print(
-        "Dataset does not contain row 6."
-    )
+        print(
+            "IMPORTANT: Dataset `id` is NOT a globally "
+            "unique FAISS identifier."
+        )
 
+        print()
 
-# ==========================================================
-# FIND ACTUAL ROW FOR doc_id = 6
-# ==========================================================
+        for document_id in [
+            6,
+            25,
+            108,
+            114,
+        ]:
 
-print()
-print("-" * 60)
-print("SEARCHING FOR STORED doc_id = 6")
-print("-" * 60)
+            print(
+                f"id={document_id} "
+                f"-> FAISS rows="
+                f"{id_to_rows.get(document_id, [])}"
+            )
 
-matches = []
+    else:
 
-for row_index, document in enumerate(data):
+        print(
+            "Dataset IDs are unique."
+        )
 
-    stored_id = document.get(
-        "doc_id"
-    )
+    # ======================================================
+    # SAMPLE ROWS
+    # ======================================================
 
-    if (
-        stored_id == 6
-        or str(stored_id) == "6"
+    print()
+    print("-" * 70)
+    print("DATASET ROW / ID / FAISS MAPPING")
+    print("-" * 70)
+
+    for row_index in range(
+        min(15, len(data))
     ):
 
-        matches.append(
-            row_index
+        document = data[row_index]
+
+        print(
+            f"FAISS row={row_index} | "
+            f"dataset id={document.get('id')} | "
+            f"source={document.get('source')}"
         )
 
-if matches:
+    # ======================================================
+    # FUSION DATASET
+    # ======================================================
 
-    print(
-        "doc_id=6 appears at dataset row(s):",
-        matches
-    )
+    print()
+    print("-" * 70)
+    print("GROUND-TRUTH RESOLUTION")
+    print("-" * 70)
 
-    for row_index in matches:
+    with FUSION_DATASET_PATH.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
+
+        fusion_dataset = json.load(
+            file
+        )
+
+    resolved_all = []
+
+    for item in fusion_dataset:
+
+        relevant_ids = item.get(
+            "relevant_doc_ids",
+            [],
+        )
+
+        if not relevant_ids:
+            continue
 
         print()
         print(
-            f"Row {row_index}:"
+            f"Query: {item['query']}"
         )
 
         print(
-            json.dumps(
-                data[row_index],
-                indent=2,
-                ensure_ascii=False,
-            )[:2000]
+            "Original dataset IDs:",
+            relevant_ids,
         )
 
-else:
+        resolved_rows = resolve_ground_truth(
+            data,
+            item,
+        )
+
+        print(
+            "Resolved FAISS rows:",
+            resolved_rows,
+        )
+
+        for row in resolved_rows:
+
+            document = data[row]
+
+            print(
+                f"  FAISS row {row} "
+                f"-> dataset id {document.get('id')} "
+                f"-> source {document.get('source')}"
+            )
+
+        resolved_all.append(
+            (
+                item["query"],
+                resolved_rows,
+            )
+        )
+
+    # ======================================================
+    # FINAL
+    # ======================================================
+
+    print()
+    print("=" * 70)
+    print("ALIGNMENT RESULT")
+    print("=" * 70)
 
     print(
-        "doc_id=6 was NOT found as a document field."
-    )
-
-
-# ==========================================================
-# FINAL INTERPRETATION
-# ==========================================================
-
-print()
-print("=" * 60)
-print("INTERPRETATION")
-print("=" * 60)
-
-if len(data) != len(embeddings):
-
-    print(
-        "WARNING:"
-    )
-
-    print(
-        "Dataset and embedding counts differ."
-    )
-
-elif (
-    len(data) > 6
-    and (
-        data[6].get("doc_id") == 6
-        or str(data[6].get("doc_id")) == "6"
-    )
-):
-
-    print(
-        "PASS:"
-    )
-
-    print(
-        "dataset row 6 has doc_id=6."
+        "PASS - dataset and embeddings are row-aligned."
     )
 
     print(
-        "Therefore doc_id=6 appears to align"
-        " directly with FAISS row 6."
+        "PASS - ground truth can be resolved to exact "
+        "FAISS row IDs."
     )
 
-else:
-
+    print()
     print(
         "IMPORTANT:"
     )
 
     print(
-        "ground-truth doc_id=6 does NOT directly"
-        " appear to be the document ID of dataset row 6."
+        "FAISS search results must be evaluated using "
+        "FAISS row indices."
     )
 
     print(
-        "A document-ID -> FAISS-row mapping may be required."
+        "Dataset `id` values must NOT be compared directly "
+        "against FAISS result indices."
     )
 
-print()
-print("=" * 60)
-print("CHECK COMPLETE")
-print("=" * 60)
+    print()
+    print(
+        "Alignment check complete."
+    )
+
+
+# ==========================================================
+# ENTRY POINT
+# ==========================================================
+
+if __name__ == "__main__":
+    main()

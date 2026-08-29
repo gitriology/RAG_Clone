@@ -1,28 +1,29 @@
 from __future__ import annotations
 
 import argparse
-import time
 from pathlib import Path
 
 import faiss
 
+from backend.retrieval.index.faiss_index import (
+    DEFAULT_INDEX_TYPE,
+    build_faiss,
+    get_faiss_metadata,
+)
 from backend.retrieval.utils.load_embeddings import (
     load_embeddings,
 )
 
-from backend.retrieval.index.faiss_index import (
-    build_faiss,
-    get_index_metadata,
+
+# ==========================================================
+# PROJECT PATHS
+# ==========================================================
+
+PROJECT_ROOT = (
+    Path(__file__)
+    .resolve()
+    .parents[3]
 )
-
-
-# ==========================================================
-# PROJECT PATH
-# ==========================================================
-
-PROJECT_ROOT = Path(
-    __file__
-).resolve().parents[3]
 
 DEFAULT_OUTPUT = (
     PROJECT_ROOT
@@ -41,20 +42,20 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=(
-            "Build the project's FAISS retrieval index."
+            "Build the FAISS retrieval index."
         )
     )
 
     parser.add_argument(
         "--index-type",
         choices=[
-            "flat",
             "hnsw",
+            "flat",
         ],
-        default="flat",
+        default=DEFAULT_INDEX_TYPE,
         help=(
             "FAISS index type. "
-            "Default: flat"
+            "Default: hnsw"
         ),
     )
 
@@ -68,110 +69,103 @@ def main():
         ),
     )
 
-    parser.add_argument(
-        "--hnsw-m",
-        type=int,
-        default=32,
-        help=(
-            "HNSW M parameter. "
-            "Default: 32"
-        ),
-    )
-
-    parser.add_argument(
-        "--hnsw-ef-construction",
-        type=int,
-        default=40,
-        help=(
-            "HNSW construction parameter. "
-            "Default: 40"
-        ),
-    )
-
-    parser.add_argument(
-        "--hnsw-ef-search",
-        type=int,
-        default=32,
-        help=(
-            "HNSW search parameter. "
-            "Default: 32"
-        ),
-    )
-
     args = parser.parse_args()
 
-    print()
-    print(
-        "=================================================="
+    output = Path(
+        args.output
     )
+
+    print(
+        "=" * 60
+    )
+
     print(
         "FAISS INDEX BUILD"
     )
+
     print(
-        "=================================================="
+        "=" * 60
+    )
+
+    print(
+        f"Project root: {PROJECT_ROOT}"
+    )
+
+    print(
+        f"Index type:   {args.index_type}"
+    )
+
+    print(
+        f"Output:       {output}"
     )
 
     # ------------------------------------------------------
     # LOAD EMBEDDINGS
     # ------------------------------------------------------
 
+    print()
+
     print(
-        "[FAISS] Loading cached embeddings..."
+        "[FAISS] Loading embeddings..."
     )
 
     embeddings = load_embeddings()
 
     print(
-        f"[FAISS] Embeddings shape: "
+        f"[FAISS] Embedding shape: "
         f"{embeddings.shape}"
     )
+
+    if embeddings.ndim != 2:
+
+        raise ValueError(
+            "Embeddings must be 2-dimensional. "
+            f"Received: {embeddings.shape}"
+        )
 
     # ------------------------------------------------------
     # BUILD
     # ------------------------------------------------------
 
     print()
-    print(
-        f"[FAISS] Building "
-        f"{args.index_type.upper()} index..."
-    )
 
-    start = time.perf_counter()
+    print(
+        "[FAISS] Building index..."
+    )
 
     index = build_faiss(
-
         embeddings,
-
         index_type=args.index_type,
-
-        hnsw_m=args.hnsw_m,
-
-        hnsw_ef_construction=(
-            args.hnsw_ef_construction
-        ),
-
-        hnsw_ef_search=(
-            args.hnsw_ef_search
-        ),
-
     )
 
-    build_time = (
-        time.perf_counter()
-        - start
-    )
+    # ------------------------------------------------------
+    # FINAL CONSISTENCY CHECK
+    # ------------------------------------------------------
+
+    if index.ntotal != len(
+        embeddings
+    ):
+
+        raise RuntimeError(
+            "FAISS index contains a different "
+            "number of vectors than the embeddings cache: "
+            f"index={index.ntotal}, "
+            f"embeddings={len(embeddings)}"
+        )
 
     # ------------------------------------------------------
     # SAVE
     # ------------------------------------------------------
 
-    output = Path(
-        args.output
-    )
-
     output.parent.mkdir(
         parents=True,
         exist_ok=True,
+    )
+
+    print()
+
+    print(
+        "[FAISS] Saving index..."
     )
 
     faiss.write_index(
@@ -180,55 +174,115 @@ def main():
     )
 
     # ------------------------------------------------------
-    # RESULT
+    # VERIFY SAVED INDEX
     # ------------------------------------------------------
 
-    metadata = get_index_metadata(
-        index
+    print()
+
+    print(
+        "[FAISS] Re-opening saved index "
+        "for verification..."
+    )
+
+    verified_index = faiss.read_index(
+        str(output)
+    )
+
+    if verified_index.ntotal != len(
+        embeddings
+    ):
+
+        raise RuntimeError(
+            "Saved FAISS index failed "
+            "the vector-count consistency check: "
+            f"index={verified_index.ntotal}, "
+            f"embeddings={len(embeddings)}"
+        )
+
+    if verified_index.d != embeddings.shape[1]:
+
+        raise RuntimeError(
+            "Saved FAISS index failed "
+            "the dimension consistency check: "
+            f"index={verified_index.d}, "
+            f"embeddings={embeddings.shape[1]}"
+        )
+
+    metadata = get_faiss_metadata(
+        verified_index
+    )
+
+    # ------------------------------------------------------
+    # REPORT
+    # ------------------------------------------------------
+
+    print()
+
+    print(
+        "=" * 60
+    )
+
+    print(
+        "FAISS INDEX BUILD COMPLETE"
+    )
+
+    print(
+        "=" * 60
+    )
+
+    print(
+        f"Index type:          "
+        f"{metadata.get('index_type')}"
+    )
+
+    print(
+        f"Embedding dimension: "
+        f"{metadata.get('dimension')}"
+    )
+
+    print(
+        f"Indexed vectors:     "
+        f"{metadata.get('ntotal')}"
+    )
+
+    print(
+        f"Metric:              "
+        f"{metadata.get('metric')}"
+    )
+
+    if (
+        metadata.get(
+            "index_type"
+        )
+        == "hnsw"
+    ):
+
+        print(
+            f"HNSW M:              "
+            f"{metadata.get('hnsw_m')}"
+        )
+
+        print(
+            f"HNSW efSearch:       "
+            f"{metadata.get('hnsw_ef_search')}"
+        )
+
+        print(
+            f"HNSW efConstruction: "
+            f"{metadata.get('hnsw_ef_construction')}"
+        )
+
+    print(
+        f"Saved to:             "
+        f"{output}"
     )
 
     print()
-    print(
-        "=================================================="
-    )
 
     print(
-        "FAISS INDEX CREATED"
+        "RESULT: PASS"
     )
 
-    print(
-        "=================================================="
-    )
-
-    print(
-        "Index type:",
-        metadata["index_type"],
-    )
-
-    print(
-        "Dimension:",
-        metadata["dimension"],
-    )
-
-    print(
-        "Vectors:",
-        metadata["ntotal"],
-    )
-
-    print(
-        f"Build time: "
-        f"{build_time:.4f}s"
-    )
-
-    print(
-        "Saved to:",
-        output,
-    )
-
-
-# ==========================================================
-# ENTRY POINT
-# ==========================================================
 
 if __name__ == "__main__":
     main()
