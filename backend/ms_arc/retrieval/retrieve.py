@@ -1,9 +1,17 @@
+from __future__ import annotations
+
 import os
+import time
+from pathlib import Path
+
 import faiss
 
 from backend.retrieval.utils.load_data import load_data
 from backend.retrieval.index.faiss_index import build_faiss
-from backend.retrieval.lexical.bm25 import build_bm25
+from backend.retrieval.lexical.bm25 import (
+    build_bm25,
+    load_or_build_bm25,
+)
 from backend.retrieval.hybrid.hybrid_search import hybrid_search
 
 from backend.ms_arc.state.retrieval_state import (
@@ -11,14 +19,68 @@ from backend.ms_arc.state.retrieval_state import (
     RetrievedDocument,
 )
 
+
+# ==========================================================
+# STARTUP TIMING
+# ==========================================================
+
+_ENGINE_START_TIME = time.perf_counter()
+
+BM25_FORCE_REBUILD = (
+    os.getenv(
+        "OPT14_FORCE_BM25_REBUILD",
+        "0",
+    ).strip().lower()
+    in {
+        "1",
+        "true",
+        "yes",
+    }
+)
+
+
+# ==========================================================
+# PROJECT PATHS
+# ==========================================================
+
+PROJECT_ROOT = Path(
+    __file__
+).resolve().parents[3]
+
+DATASET_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "processed"
+    / "all_domains.json"
+)
+
+FAISS_PATH = (
+    PROJECT_ROOT
+    / "backend"
+    / "retrieval"
+    / "index"
+    / "faiss.index"
+)
+
+BM25_CACHE_PATH = (
+    PROJECT_ROOT
+    / "backend"
+    / "retrieval"
+    / "index"
+    / "bm25_cache.pkl"
+)
+
+
 # ==========================================================
 # DATASET
 # ==========================================================
 
+_dataset_start = time.perf_counter()
+
 print("[MS-ARC] Loading Dataset...")
 
 data = load_data(
-    "data/processed/all_domains.json"
+    str(DATASET_PATH)
 )
 
 texts = [
@@ -26,18 +88,27 @@ texts = [
     for doc in data
 ]
 
-# Fast lookup by document id
 doc_lookup = {
-
     idx: doc
-
     for idx, doc in enumerate(data)
-
 }
+
+_dataset_time = (
+    time.perf_counter()
+    - _dataset_start
+)
+
+print(
+    f"[MS-ARC] Dataset loaded in "
+    f"{_dataset_time:.4f}s"
+)
+
 
 # ==========================================================
 # EMBEDDINGS
 # ==========================================================
+
+_embeddings_start = time.perf_counter()
 
 print(
     "[MS-ARC] Loading Cached Embeddings..."
@@ -49,15 +120,24 @@ from backend.retrieval.utils.load_embeddings import (
 
 embeddings = load_embeddings()
 
+_embeddings_time = (
+    time.perf_counter()
+    - _embeddings_start
+)
+
+print(
+    f"[MS-ARC] Embeddings loaded in "
+    f"{_embeddings_time:.4f}s"
+)
+
+
 # ==========================================================
 # FAISS
 # ==========================================================
 
-FAISS_PATH = (
-    "backend/retrieval/index/faiss.index"
-)
+_faiss_start = time.perf_counter()
 
-if os.path.exists(FAISS_PATH):
+if FAISS_PATH.exists():
 
     print(
         "[MS-ARC] "
@@ -65,8 +145,10 @@ if os.path.exists(FAISS_PATH):
     )
 
     faiss_index = faiss.read_index(
-        FAISS_PATH
+        str(FAISS_PATH)
     )
+
+    faiss_action = "loaded"
 
 else:
 
@@ -79,25 +161,196 @@ else:
         embeddings
     )
 
-    faiss.write_index(
-        faiss_index,
-        FAISS_PATH
+    FAISS_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-print(len(data))
-print(len(texts))
-print(faiss_index.ntotal)
+    faiss.write_index(
+        faiss_index,
+        str(FAISS_PATH),
+    )
+
+    faiss_action = "built"
+
+_faiss_time = (
+    time.perf_counter()
+    - _faiss_start
+)
+
+print(
+    f"[MS-ARC] FAISS {faiss_action} in "
+    f"{_faiss_time:.4f}s"
+)
+
+print(
+    f"[MS-ARC] Dataset documents: "
+    f"{len(data)}"
+)
+
+print(
+    f"[MS-ARC] Text documents: "
+    f"{len(texts)}"
+)
+
+print(
+    f"[MS-ARC] FAISS vectors: "
+    f"{faiss_index.ntotal}"
+)
+
 
 # ==========================================================
 # BM25
 # ==========================================================
 
+_bm25_start = time.perf_counter()
+
 print(
-    "[MS-ARC] Building BM25 Index..."
+    "[MS-ARC] Initializing BM25..."
 )
 
-bm25, tokenized = build_bm25(
-    texts
+if BM25_FORCE_REBUILD:
+
+    # ------------------------------------------------------
+    # Optimization #14 benchmark baseline
+    #
+    # This reproduces the old behavior:
+    #
+    #     build_bm25(texts)
+    #
+    # No persistent cache is used.
+    # ------------------------------------------------------
+
+    print(
+        "[MS-ARC] "
+        "OPT14_FORCE_BM25_REBUILD=1"
+    )
+
+    print(
+        "[MS-ARC] "
+        "Forcing BM25 rebuild for baseline benchmark..."
+    )
+
+    bm25, tokenized = build_bm25(
+        texts
+    )
+
+    bm25_loaded_from_cache = False
+
+    bm25_mode = "forced_rebuild"
+
+else:
+
+    # ------------------------------------------------------
+    # Optimization #14 optimized path
+    #
+    # First run:
+    #
+    #     build -> save
+    #
+    # Later runs:
+    #
+    #     load cache -> reuse
+    # ------------------------------------------------------
+
+    (
+        bm25,
+        tokenized,
+        bm25_loaded_from_cache,
+    ) = load_or_build_bm25(
+        texts=texts,
+        cache_path=BM25_CACHE_PATH,
+    )
+
+    if bm25_loaded_from_cache:
+
+        bm25_mode = "cache"
+
+    else:
+
+        bm25_mode = "build_and_cache"
+
+
+_bm25_time = (
+    time.perf_counter()
+    - _bm25_start
+)
+
+print(
+    f"[MS-ARC] BM25 initialization "
+    f"completed in {_bm25_time:.4f}s"
+)
+
+print(
+    "[MS-ARC] BM25 mode:",
+    bm25_mode,
+)
+
+print(
+    "[MS-ARC] BM25 cache reused:",
+    bm25_loaded_from_cache,
+)
+
+print(
+    "[MS-ARC] BM25 cache path:",
+    BM25_CACHE_PATH,
+)
+
+
+# ==========================================================
+# ENGINE STARTUP SUMMARY
+# ==========================================================
+
+_ENGINE_STARTUP_TIME = (
+    time.perf_counter()
+    - _ENGINE_START_TIME
+)
+
+print()
+print(
+    "=================================================="
+)
+
+print(
+    "MS-ARC STARTUP SUMMARY"
+)
+
+print(
+    "=================================================="
+)
+
+print(
+    f"Dataset loading:      "
+    f"{_dataset_time:.4f}s"
+)
+
+print(
+    f"Embedding loading:    "
+    f"{_embeddings_time:.4f}s"
+)
+
+print(
+    f"FAISS initialization: "
+    f"{_faiss_time:.4f}s"
+)
+
+print(
+    f"BM25 initialization:  "
+    f"{_bm25_time:.4f}s"
+)
+
+print(
+    f"Total engine startup:  "
+    f"{_ENGINE_STARTUP_TIME:.4f}s"
+)
+
+print(
+    f"BM25 mode:             "
+    f"{bm25_mode}"
+)
+
+print(
+    "=================================================="
 )
 
 print(
@@ -113,21 +366,14 @@ def retrieve(
     state: RetrievalState,
     fusion_method: str = "minmax",
 ) -> RetrievalState:
+
     """
     Performs hybrid retrieval.
 
-    fusion_method is explicitly propagated through
-    the MS-ARC pipeline.
-
-    Supported:
+    Supported fusion methods:
 
         minmax
         rrf
-
-    This explicit parameter is intentionally used
-    instead of an environment variable so that
-    benchmarking cannot accidentally reuse the
-    previously imported fusion configuration.
     """
 
     fusion_method = (
@@ -154,17 +400,6 @@ def retrieve(
         "[MS-ARC] Fusion method:",
         fusion_method,
     )
-
-    # ======================================================
-    # Candidate depth
-    # ======================================================
-    #
-    # Optimization #6 candidate controller may already
-    # have selected a candidate depth.
-    #
-    # If present, use it.
-    # Otherwise let hybrid_search use its default.
-    # ======================================================
 
     candidate_k = state.debug.get(
         "candidate_k"
@@ -194,8 +429,9 @@ def retrieve(
 
     merged_docs = []
 
+
     # ======================================================
-    # Dense Results
+    # DENSE RESULTS
     # ======================================================
 
     for item in results[
@@ -256,8 +492,9 @@ def retrieve(
 
         )
 
+
     # ======================================================
-    # Sparse Results
+    # SPARSE RESULTS
     # ======================================================
 
     for item in results[
@@ -318,8 +555,9 @@ def retrieve(
 
         )
 
+
     # ======================================================
-    # Hybrid Results
+    # HYBRID RESULTS
     # ======================================================
 
     for item in results[
@@ -386,6 +624,7 @@ def retrieve(
 
         )
 
+
     # ======================================================
     # STORE STATE
     # ======================================================
@@ -399,6 +638,7 @@ def retrieve(
     state.selected_documents = (
         merged_docs
     )
+
 
     # ======================================================
     # DEBUG
@@ -414,6 +654,29 @@ def retrieve(
         "candidate_k"
     )
 
+    state.debug[
+        "bm25_cache_path"
+    ] = str(
+        BM25_CACHE_PATH
+    )
+
+    state.debug[
+        "bm25_loaded_from_cache"
+    ] = bm25_loaded_from_cache
+
+    state.debug[
+        "bm25_mode"
+    ] = bm25_mode
+
+    state.debug[
+        "bm25_initialization_time"
+    ] = _bm25_time
+
+    state.debug[
+        "engine_startup_time"
+    ] = _ENGINE_STARTUP_TIME
+
+
     print(
         f"[MS-ARC] Retrieved "
         f"{len(merged_docs)} documents."
@@ -422,6 +685,11 @@ def retrieve(
     print(
         "[MS-ARC] Fusion method used:",
         fusion_method,
+    )
+
+    print(
+        "[MS-ARC] BM25 mode:",
+        bm25_mode,
     )
 
     return state
@@ -442,6 +710,57 @@ if __name__ == "__main__":
     state = retrieve(
         state,
         fusion_method="minmax",
+    )
+
+    print()
+
+    print(
+        "=================================================="
+    )
+
+    print(
+        "MS-ARC TEST RESULT"
+    )
+
+    print(
+        "=================================================="
+    )
+
+    print(
+        "Fusion:",
+        state.debug.get(
+            "fusion_method"
+        ),
+    )
+
+    print(
+        "BM25 mode:",
+        state.debug.get(
+            "bm25_mode"
+        ),
+    )
+
+    print(
+        "BM25 cache reused:",
+        state.debug.get(
+            "bm25_loaded_from_cache"
+        ),
+    )
+
+    print(
+        "BM25 initialization:",
+        state.debug.get(
+            "bm25_initialization_time"
+        ),
+        "seconds",
+    )
+
+    print(
+        "Total engine startup:",
+        state.debug.get(
+            "engine_startup_time"
+        ),
+        "seconds",
     )
 
     print()

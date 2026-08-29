@@ -1,0 +1,58 @@
+{
+    "optimization": "Optimization #14",
+    "experiment": "BM25 persistent cache before-vs-after startup benchmark",
+    "configuration": {
+        "runs_per_mode": 3,
+        "cache_path": "C:\\Users\\shrut\\OneDrive\\Desktop\\SemProjects\\Major Project\\RAG\\backend\\retrieval\\index\\bm25_cache.pkl"
+    },
+    "before": {
+        "description": "BM25 rebuilt on every startup",
+        "runs": [
+            {
+                "process_time": 16.362057599937543,
+                "startup_time": 0.4189,
+                "bm25_time": 0.3522
+            },
+            {
+                "process_time": 26.925618300097995,
+                "startup_time": 0.3717,
+                "bm25_time": 0.3067
+            },
+            {
+                "process_time": 25.475710700033233,
+                "startup_time": 1.2365,
+                "bm25_time": 1.0669
+            }
+        ],
+        "median_bm25_initialization_seconds": 0.3522,
+        "median_total_startup_seconds": 0.4189
+    },
+    "after": {
+        "description": "BM25 loaded from persistent cache",
+        "runs": [
+            {
+                "process_time": 15.566769300028682,
+                "startup_time": 0.1789,
+                "bm25_time": 0.1294
+            },
+            {
+                "process_time": 15.011934300069697,
+                "startup_time": 0.1786,
+                "bm25_time": 0.1269
+            },
+            {
+                "process_time": 14.895507000037469,
+                "startup_time": 0.1813,
+                "bm25_time": 0.1314
+            }
+        ],
+        "median_bm25_initialization_seconds": 0.1294,
+        "median_total_startup_seconds": 0.1789
+    },
+    "improvement": {
+        "bm25_seconds_saved": 0.22280000000000003,
+        "bm25_percentage_reduction": 63.25951164111301,
+        "startup_seconds_saved": 0.24,
+        "startup_percentage_reduction": 57.292910002387195
+    }
+}

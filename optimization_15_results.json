@@ -1,0 +1,99 @@
+{
+    "optimization": "Optimization #15",
+    "experiment": "IndexFlatIP vs HNSW",
+    "evaluation_protocol": {
+        "top_k": 3,
+        "same_dataset": true,
+        "same_embeddings": true,
+        "same_queries": true,
+        "same_ground_truth": true,
+        "only_variable": "faiss_index_type",
+        "search_runs": 30,
+        "warmup_runs": 5
+    },
+    "dataset": {
+        "documents": 2013,
+        "embedding_dimension": 768
+    },
+    "results": {
+        "flat": {
+            "index_type": "flat",
+            "index_metadata": {
+                "index_type": "flat",
+                "dimension": 768,
+                "ntotal": 2013,
+                "metric": "inner_product"
+            },
+            "build_time_seconds": 0.004065699991770089,
+            "average_search_latency_ms": 0.38696333455542725,
+            "top_k": 3,
+            "queries_total": 5,
+            "recall_at_3": 0.0,
+            "precision_at_3": 0.0,
+            "hit_rate_at_3": 0.0,
+            "mrr_at_3": 0.0,
+            "query_results": [
+                {
+                    "query": "what is machine learning?",
+                    "relevant_doc_ids": [
+                        6
+                    ],
+                    "retrieved_doc_ids": [
+                        1885,
+                        1887,
+                        1886
+                    ],
+                    "recall_at_3": 0.0,
+                    "precision_at_3": 0.0,
+                    "hit_rate_at_3": 0.0,
+                    "mrr_at_3": 0.0
+                }
+            ]
+        },
+        "hnsw": {
+            "index_type": "hnsw",
+            "index_metadata": {
+                "index_type": "hnsw",
+                "dimension": 768,
+                "ntotal": 2013,
+                "metric": "inner_product",
+                "hnsw_m": 64,
+                "hnsw_ef_search": 32,
+                "hnsw_ef_construction": 40
+            },
+            "build_time_seconds": 0.05876779998652637,
+            "average_search_latency_ms": 0.04801333028202255,
+            "top_k": 3,
+            "queries_total": 5,
+            "recall_at_3": 0.0,
+            "precision_at_3": 0.0,
+            "hit_rate_at_3": 0.0,
+            "mrr_at_3": 0.0,
+            "query_results": [
+                {
+                    "query": "what is machine learning?",
+                    "relevant_doc_ids": [
+                        6
+                    ],
+                    "retrieved_doc_ids": [
+                        1885,
+                        1887,
+                        1886
+                    ],
+                    "recall_at_3": 0.0,
+                    "precision_at_3": 0.0,
+                    "hit_rate_at_3": 0.0,
+                    "mrr_at_3": 0.0
+                }
+            ]
+        }
+    },
+    "comparison": {
+        "search_latency_speedup_hnsw_vs_flat": 8.059497899488894,
+        "recall_delta_hnsw_minus_flat": 0.0,
+        "precision_delta_hnsw_minus_flat": 0.0,
+        "hit_rate_delta_hnsw_minus_flat": 0.0,
+        "mrr_delta_hnsw_minus_flat": 0.0,
+        "winner": "hnsw"
+    }
+}
