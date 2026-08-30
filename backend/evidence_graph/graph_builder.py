@@ -5,11 +5,14 @@ from backend.ms_arc.state.retrieval_state import RetrievalState
 from backend.evidence_graph.state.evidence_graph_state import (
     EvidenceGraphState,
 )
+
 from backend.evidence_graph.models.evidence_node import (
     EvidenceNode,
 )
 
-from backend.evidence_graph.edge_builder import build_edges
+from backend.evidence_graph.edge_builder import (
+    build_edges,
+)
 
 from backend.evidence_graph.models.graph_statistics import (
     compute_graph_statistics,
@@ -38,10 +41,15 @@ from backend.evidence_graph.graph_score import (
 from backend.evidence_graph.ranking.graph_ranking import (
     build_graph_ranking,
 )
+
 from backend.evidence_graph.validation.graph_validation import (
     validate_graph,
 )
 
+
+# ==========================================================
+# BUILD EVIDENCE GRAPH
+# ==========================================================
 
 def build_graph(
     retrieval_state: RetrievalState,
@@ -50,9 +58,8 @@ def build_graph(
     Complete Evidence Graph construction pipeline.
 
     Pipeline
-
         1. Create Nodes
-        2. Create Edges
+        2. Create Semantic Edges
         3. Compute Graph Statistics
         4. Discover Clusters
         5. Compute Graph Coherence
@@ -60,47 +67,54 @@ def build_graph(
         7. Compute Evidence Quality
         8. Graph-based Evidence Ranking
         9. Compute Overall Graph Score
+       10. Validate Graph
+
+    Optimization #20
+    -----------------
+    Edge construction is now performed by the optimized
+    edge_builder:
+
+        evidence text
+            ↓
+        batched BGE embeddings
+            ↓
+        cosine similarity matrix
+            ↓
+        threshold
+            ↓
+        semantic edges
     """
 
     graph_state = EvidenceGraphState()
 
     graph = nx.Graph()
 
-    # =====================================================
+    # ======================================================
     # Create Nodes
-    # =====================================================
+    # ======================================================
 
     evidence_nodes = []
 
     for document in retrieval_state.reranked_results:
 
         node = EvidenceNode(
-
             node_id=document.doc_id,
-
             text=document.text,
-
             domain=document.metadata.get(
                 "domain",
                 "unknown",
             ),
-
             source=document.metadata.get(
                 "source",
                 "unknown",
             ),
-
             dense_score=document.dense_score,
-
             sparse_score=document.sparse_score,
-
             rerank_score=document.rerank_score,
-
             hybrid_score=document.metadata.get(
                 "hybrid_score",
                 0.0,
             ),
-
         )
 
         evidence_nodes.append(node)
@@ -108,35 +122,48 @@ def build_graph(
         graph_state.nodes.append(node)
 
         graph.add_node(
-
             node.node_id,
-
             node=node,
-
         )
 
         graph_state.node_lookup[
             node.node_id
         ] = node
 
-    # =====================================================
-    # Build Edges
-    # =====================================================
+    # ======================================================
+    # Build Semantic Edges
+    # ======================================================
+    #
+    # Optimization #20:
+    #
+    #   OLD:
+    #       Python nested pairwise loop
+    #
+    #   NEW:
+    #       Batch embeddings
+    #           ↓
+    #       similarity matrix
+    #           ↓
+    #       threshold
+    #           ↓
+    #       edges
+    #
+    # The default threshold remains 0.55 to preserve the
+    # existing graph-construction configuration.
+    # ======================================================
 
-    edges = build_edges(evidence_nodes)
+    edges = build_edges(
+        evidence_nodes,
+        similarity_threshold=0.55,
+    )
 
     for edge in edges:
 
         graph.add_edge(
-
             edge.source,
-
             edge.target,
-
             weight=edge.weight,
-
             relation=edge.relation,
-
         )
 
         graph_state.edges.append(edge)
@@ -145,14 +172,20 @@ def build_graph(
             (edge.source, edge.target)
         ] = edge
 
+    # ======================================================
+    # Store NetworkX Graph
+    # ======================================================
+
     graph_state.graph = graph
 
-    # =====================================================
+    # ======================================================
     # Graph Statistics
-    # =====================================================
+    # ======================================================
 
-    graph_state.statistics = compute_graph_statistics(
-        graph
+    graph_state.statistics = (
+        compute_graph_statistics(
+            graph
+        )
     )
 
     graph_state.signals.graph.node_count = (
@@ -175,92 +208,87 @@ def build_graph(
         graph_state.statistics.connected_components
     )
 
-    # =====================================================
+    # ======================================================
     # Clustering
-    # =====================================================
+    # ======================================================
 
     graph_state = build_clusters(
         graph_state
     )
 
-    # =====================================================
+    # ======================================================
     # Graph Coherence
-    # =====================================================
+    # ======================================================
 
     graph_state = compute_graph_coherence(
         graph_state
     )
 
-    # =====================================================
+    # ======================================================
     # Graph Analytics
-    # =====================================================
+    # ======================================================
 
     graph_state = analyze_graph(
         graph_state
     )
 
-    # =====================================================
+    # ======================================================
     # Evidence Quality
-    # =====================================================
+    # ======================================================
 
     graph_state = compute_evidence_quality(
-
         retrieval_state,
-
         graph_state,
-
     )
 
-    # =====================================================
-    # Graph-based Evidence Ranking (Phase 8E)
-    # =====================================================
+    # ======================================================
+    # Graph-based Evidence Ranking
+    # ======================================================
 
     graph_ranking = build_graph_ranking(
-
         graph_state,
-
     )
 
     # Store ranking metrics
 
     graph_state.signals.ranking.average_score = (
-
         graph_ranking.statistics.average_score
-
     )
 
     graph_state.signals.ranking.highest_score = (
-
         graph_ranking.statistics.highest_score
-
     )
 
     graph_state.signals.ranking.lowest_score = (
-
         graph_ranking.statistics.lowest_score
-
     )
 
     graph_state.signals.ranking.graph_consensus = (
-
         graph_ranking.consensus.score
-
     )
 
-    # (Optional but recommended)
-    # Keep the full ranking state for Phase 9
+    # Keep full ranking state for downstream phases.
 
     graph_state.ranking = graph_ranking
 
-    # =====================================================
+    # ======================================================
     # Overall Graph Score
-    # =====================================================
+    # ======================================================
 
-    graph_state.graph_score = compute_graph_score(
-        graph_state
+    graph_state.graph_score = (
+        compute_graph_score(
+            graph_state
+        )
     )
-    graph_state.validation = validate_graph(
-        graph_state
+
+    # ======================================================
+    # Graph Validation
+    # ======================================================
+
+    graph_state.validation = (
+        validate_graph(
+            graph_state
+        )
     )
 
     return graph_state
