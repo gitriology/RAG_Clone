@@ -158,11 +158,15 @@ def query_rag(
 
     return {
 
+        # The API is the single source of truth for both answer and
+        # confidence. Do not truncate/re-score either value here.
         "answer":
-            top.get(
-                "text",
-                "",
-            ),
+            str(
+                top.get(
+                    "text",
+                    "",
+                )
+            ).strip(),
 
         "confidence":
             safe_float(
@@ -219,6 +223,36 @@ def query_rag(
                 "validation",
 
             ],
+
+            "confidence_calibration":
+                top.get(
+                    "confidence_calibration",
+                    {},
+                ),
+
+            "retrieval_confidence":
+                safe_float(
+                    top.get(
+                        "retrieval_confidence",
+                        0.0,
+                    )
+                ),
+
+            "answer_confidence":
+                safe_float(
+                    top.get(
+                        "answer_confidence",
+                        0.0,
+                    )
+                ),
+
+            "answer_valid":
+                bool(
+                    top.get(
+                        "answer_valid",
+                        False,
+                    )
+                ),
 
             "optimization_21":
                 {

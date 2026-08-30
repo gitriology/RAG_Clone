@@ -25,17 +25,16 @@ function App() {
     try {
       const data = await sendQuery(input);
 
-      const trimmedAnswer =
-        data.answer
-          ?.split(". ")
-          .slice(0,2)
-          .join(". ") + ".";
-
+      // The backend is the source of truth. Do not truncate or
+      // otherwise rewrite the answer returned by the RAG pipeline.
       const botMsg = {
         type: "bot",
-        text: trimmedAnswer,
-        confidence: Math.abs(data.confidence)/10,
-        sources: data.sources,
+        text: data.answer ?? "",
+        confidence:
+          typeof data.confidence === "number"
+            ? data.confidence
+            : Number(data.confidence ?? 0),
+        sources: data.sources ?? [],
       };
 
       setMessages((prev) => {

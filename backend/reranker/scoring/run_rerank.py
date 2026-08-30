@@ -1525,6 +1525,10 @@ def run_pipeline(
     validation = validate_answer(
         answer,
         top_docs,
+        evidence=generation.get(
+            "selected_sentences",
+            [],
+        ),
     )
 
     if not isinstance(
@@ -1558,6 +1562,11 @@ def run_pipeline(
             documents=top_docs,
             validation=validation,
             retrieval_confidence=retrieval_confidence,
+            evidence=generation.get(
+                "selected_sentences",
+                [],
+            ),
+            answer=answer,
         )
     )
 
@@ -1789,6 +1798,19 @@ def run_pipeline(
         ),
 
         "answer_valid": answer_valid,
+
+        "confidence_calibration": {
+            "method": "evidence_aware_composite_v2",
+            "score_range": [0.0, 1.0],
+            "answer_validation_scope": validation.get(
+                "validation_scope",
+                "unknown",
+            ),
+            "answer_validation_confidence": answer_confidence,
+            "selected_evidence_count": len(
+                selected_evidence
+            ),
+        },
 
         # ==================================================
         # Source

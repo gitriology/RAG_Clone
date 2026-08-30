@@ -18,7 +18,7 @@ function MessageBubble({ msg }) {
               msg.confidence > 0.7 ? "text-green-600" : "text-red-500"
             }`}
           >
-            Confidence: {msg.confidence}
+            Confidence: {(msg.confidence * 100).toFixed(1)}%
           </span>
 
           <div className="text-gray-500 mt-1">
