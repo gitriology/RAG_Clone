@@ -53,6 +53,14 @@ backend/graph_snapshot.json
 backend/evidence_snapshot.json
 evidence_snapshot.json
 graph_snapshot.json
+backend/retrieval/index/bm25_cache.pkl
+
+data/processed/*.json
+data/processed/*.pkl
+
+data/raw/
+!data/processed/all_domains.json
+
 # ==========================================================
 # Logs
 # ==========================================================
