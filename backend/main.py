@@ -1,11 +1,23 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from backend.reranker.scoring.run_rerank import run_pipeline
 from fastapi.middleware.cors import CORSMiddleware
+
+from backend.reranker.scoring.run_rerank import (
+    run_pipeline,
+)
+
+
+# ==========================================================
+# APPLICATION
+# ==========================================================
 
 app = FastAPI()
 
-# Enable CORS (frontend connection)
+
+# ==========================================================
+# CORS
+# ==========================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,57 +27,178 @@ app.add_middleware(
 )
 
 
-# Request schema
+# ==========================================================
+# REQUEST SCHEMA
+# ==========================================================
+
 class QueryRequest(BaseModel):
+
     query: str
 
 
-# Main API
-@app.post("/api/query")
-def query_rag(request: QueryRequest):
+# ==========================================================
+# SAFE FLOAT
+# ==========================================================
 
-    results = run_pipeline(request.query)
+def safe_float(
+    value,
+    default=0.0,
+):
+    try:
+        return float(value)
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return default
+
+
+# ==========================================================
+# MAIN API
+# ==========================================================
+
+@app.post("/api/query")
+def query_rag(
+    request: QueryRequest,
+):
+
+    results = run_pipeline(
+        request.query
+    )
+
+    # ======================================================
+    # NO RESULT
+    # ======================================================
 
     if not results:
 
         return {
-            "answer": "Sorry, I couldn't find reliable information for your question.",
-            "confidence": 0.0,
-            "domain": "unknown",
-            "sources": [],
+            "answer":
+                "Sorry, I couldn't find reliable "
+                "information for your question.",
+
+            "confidence":
+                0.0,
+
+            "domain":
+                "unknown",
+
+            "sources":
+                [],
+
             "meta": {
-                "status": "no_answer",
+
+                "status":
+                    "no_answer",
+
                 "pipeline_steps": [
+
                     "query",
+
                     "retrieval",
+
                     "reranking",
-                    "validation"
-                ]
-            }
+
+                    "evidence_graph",
+
+                    "evidence_state",
+
+                    "validation",
+
+                ],
+            },
         }
+
+    # ======================================================
+    # TOP RESULT
+    # ======================================================
 
     top = results[0]
 
+    # ======================================================
+    # SOURCE DOCUMENTS
+    # ======================================================
+
+    sources = []
+
+    for doc in results:
+
+        source = doc.get(
+            "source",
+            "unknown",
+        )
+
+        if source not in sources:
+
+            sources.append(
+                source
+            )
+
+    # ======================================================
+    # EVIDENCE GRAPH
+    # ======================================================
+
+    graph = top.get(
+        "evidence_graph",
+        {},
+    )
+
+    # ======================================================
+    # EVIDENCE STATE
+    # ======================================================
+
+    evidence_state = top.get(
+        "evidence_state",
+        {},
+    )
+
+    # ======================================================
+    # RESPONSE
+    # ======================================================
+
     return {
 
-        "answer": top.get("text", ""),
+        "answer":
+            top.get(
+                "text",
+                "",
+            ),
 
-        "confidence": float(
-        top.get("pipeline_confidence", 0.0)
-        ),
+        "confidence":
+            safe_float(
+                top.get(
+                    "pipeline_confidence",
+                    0.0,
+                )
+            ),
 
-        "domain": top.get(
-            "domain",
-            "general"
-        ),
+        "domain":
+            top.get(
+                "domain",
+                "general",
+            ),
 
-        "sources": [
-            doc.get("source", "unknown")
-            for doc in results
-        ],
+        "sources":
+            sources,
+
+        # ==================================================
+        # Research / Diagnostics
+        # ==================================================
+
+        "evidence_graph":
+            graph,
+
+        "evidence_state":
+            evidence_state,
+
+        # ==================================================
+        # Metadata
+        # ==================================================
 
         "meta": {
-            "status": "success",
+
+            "status":
+                "success",
 
             "pipeline_steps": [
 
@@ -75,11 +208,62 @@ def query_rag(request: QueryRequest):
 
                 "reranking",
 
+                "evidence_graph",
+
+                "evidence_state",
+
                 "selection",
 
-                "generation"
+                "generation",
 
-            ]
-        }
+                "validation",
 
+            ],
+
+            "optimization_21":
+                {
+
+                    "evidence_graph_integrated":
+                        bool(
+                            graph
+                        ),
+
+                    "evidence_state_integrated":
+                        bool(
+                            evidence_state
+                        ),
+
+                    "graph_nodes":
+                        int(
+                            graph.get(
+                                "node_count",
+                                0,
+                            )
+                        ),
+
+                    "graph_edges":
+                        int(
+                            graph.get(
+                                "edge_count",
+                                0,
+                            )
+                        ),
+
+                    "evidence_features":
+                        int(
+                            evidence_state.get(
+                                "feature_count",
+                                0,
+                            )
+                        ),
+
+                    "evidence_score":
+                        safe_float(
+                            evidence_state.get(
+                                "evidence_score",
+                                0.0,
+                            )
+                        ),
+                },
+        },
     }

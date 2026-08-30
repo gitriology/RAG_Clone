@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import networkx as nx
 
-from backend.ms_arc.state.retrieval_state import RetrievalState
+from backend.ms_arc.state.retrieval_state import (
+    RetrievalState,
+)
 
 from backend.evidence_graph.state.evidence_graph_state import (
     EvidenceGraphState,
@@ -70,9 +74,8 @@ def build_graph(
        10. Validate Graph
 
     Optimization #20
-    -----------------
-    Edge construction is now performed by the optimized
-    edge_builder:
+    ----------------
+    Edge construction uses the optimized edge_builder:
 
         evidence text
             ↓
@@ -83,7 +86,23 @@ def build_graph(
         threshold
             ↓
         semantic edges
+
+    Optimization #21
+    ----------------
+    The existing MS-ARC RetrievalState is reused directly.
+    No second reranking operation is performed here.
     """
+
+    if retrieval_state is None:
+        raise ValueError(
+            "build_graph() received retrieval_state=None."
+        )
+
+    if not retrieval_state.reranked_results:
+        raise ValueError(
+            "build_graph() received a RetrievalState "
+            "with no reranked_results."
+        )
 
     graph_state = EvidenceGraphState()
 
@@ -97,21 +116,29 @@ def build_graph(
 
     for document in retrieval_state.reranked_results:
 
+        if document is None:
+            continue
+
+        metadata = document.metadata
+
+        if not isinstance(metadata, dict):
+            metadata = {}
+
         node = EvidenceNode(
             node_id=document.doc_id,
             text=document.text,
-            domain=document.metadata.get(
+            domain=metadata.get(
                 "domain",
                 "unknown",
             ),
-            source=document.metadata.get(
+            source=metadata.get(
                 "source",
                 "unknown",
             ),
             dense_score=document.dense_score,
             sparse_score=document.sparse_score,
             rerank_score=document.rerank_score,
-            hybrid_score=document.metadata.get(
+            hybrid_score=metadata.get(
                 "hybrid_score",
                 0.0,
             ),
@@ -131,31 +158,39 @@ def build_graph(
         ] = node
 
     # ======================================================
+    # Verify Nodes
+    # ======================================================
+
+    if not evidence_nodes:
+        raise ValueError(
+            "Evidence Graph construction produced zero nodes."
+        )
+
+    # ======================================================
     # Build Semantic Edges
     # ======================================================
-    #
+
     # Optimization #20:
     #
-    #   OLD:
-    #       Python nested pairwise loop
-    #
-    #   NEW:
-    #       Batch embeddings
-    #           ↓
-    #       similarity matrix
-    #           ↓
-    #       threshold
-    #           ↓
-    #       edges
-    #
-    # The default threshold remains 0.55 to preserve the
-    # existing graph-construction configuration.
-    # ======================================================
+    # Batch embeddings
+    #       ↓
+    # Similarity matrix
+    #       ↓
+    # Threshold
+    #       ↓
+    # Semantic edges
 
     edges = build_edges(
         evidence_nodes,
         similarity_threshold=0.55,
     )
+
+    if edges is None:
+        edges = []
+
+    # ======================================================
+    # Store Edges
+    # ======================================================
 
     for edge in edges:
 
@@ -166,7 +201,9 @@ def build_graph(
             relation=edge.relation,
         )
 
-        graph_state.edges.append(edge)
+        graph_state.edges.append(
+            edge
+        )
 
         graph_state.edge_lookup[
             (edge.source, edge.target)
@@ -249,7 +286,9 @@ def build_graph(
         graph_state,
     )
 
-    # Store ranking metrics
+    # ======================================================
+    # Ranking Statistics
+    # ======================================================
 
     graph_state.signals.ranking.average_score = (
         graph_ranking.statistics.average_score
@@ -267,8 +306,7 @@ def build_graph(
         graph_ranking.consensus.score
     )
 
-    # Keep full ranking state for downstream phases.
-
+    # Keep complete ranking state.
     graph_state.ranking = graph_ranking
 
     # ======================================================

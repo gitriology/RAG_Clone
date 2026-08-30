@@ -17,6 +17,21 @@ def retrieve(
     Optimization #6:
         Preserve the selected fusion method and
         expose candidate-controller evidence.
+
+    Optimization #21:
+        Preserve the complete RetrievalState so downstream
+        production stages can construct the Evidence Graph
+        and Evidence State from the same MS-ARC execution.
+
+    Returns
+    -------
+    dict
+        Public retrieval result containing:
+
+        - documents
+        - retrieval_confidence
+        - evidence
+        - retrieval_state
     """
 
     fusion_method = (
@@ -28,7 +43,6 @@ def retrieve(
         "minmax",
         "rrf",
     }:
-
         raise ValueError(
             f"Unsupported fusion method: "
             f"{fusion_method}"
@@ -39,11 +53,8 @@ def retrieve(
     # ======================================================
 
     state = run_msarc(
-
         query,
-
         fusion_method=fusion_method,
-
     )
 
     # ======================================================
@@ -251,6 +262,39 @@ def retrieve(
     }
 
     # ======================================================
+    # Optimization #21
+    # ======================================================
+    #
+    # Preserve the actual RetrievalState.
+    #
+    # This is intentionally an internal pipeline object.
+    # The API layer will expose only serializable summaries.
+    # ======================================================
+
+    print()
+    print("=" * 70)
+    print(
+        "OPTIMIZATION #21 : Retrieval State Preserved"
+    )
+    print("=" * 70)
+
+    print(
+        "RetrievalState available      : PASS"
+    )
+
+    print(
+        "Reranked documents available  : "
+        f"{len(state.reranked_results)}"
+    )
+
+    print(
+        "Selected documents available  : "
+        f"{len(state.selected_documents)}"
+    )
+
+    print("=" * 70)
+
+    # ======================================================
     # FINAL RESULT
     # ======================================================
 
@@ -260,9 +304,24 @@ def retrieve(
             documents,
 
         "retrieval_confidence":
-            state.retrieval_confidence,
+            float(
+                state.retrieval_confidence
+            ),
 
         "evidence":
             evidence,
 
+        # --------------------------------------------------
+        # Optimization #21
+        # --------------------------------------------------
+        #
+        # Internal state used by:
+        #
+        #   Evidence Graph
+        #   Evidence State
+        #
+        # --------------------------------------------------
+
+        "retrieval_state":
+            state,
     }
