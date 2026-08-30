@@ -41,6 +41,9 @@ BROKEN_TEXT_PATTERNS = (
     "this icon indicates",
     "users seeking practical advice",
     "euro.who.int",
+    "building confidence in vaccines",
+    "vaccination services refers to where, when, how",
+    "and vaccination, both in ongoing",
 )
 
 # Phrases that frequently appear as unrelated material after a
@@ -162,6 +165,21 @@ def _repair_definition_fragment(sentence: str) -> List[str]:
             if not fragment.endswith("."):
                 fragment += "."
             outputs.append(fragment)
+
+    # Known WHO/PDF column-interleaving form: the extracted text can
+    # join a definition with unrelated sidebar material.  Keep only
+    # the clean definition clause when it is present.
+    vaccination_definition = re.search(
+        r"\bvaccination\s+is\s+the\s+action\s+of\s+giving\s+the\s+vaccine\b",
+        s,
+        re.I,
+    )
+    if vaccination_definition:
+        fragment = vaccination_definition.group(0).strip()
+        if not fragment.endswith("."):
+            fragment += "."
+        outputs.append(fragment)
+        return list(dict.fromkeys(outputs))
 
     # Generic "X refers to ..." definitions.
     refers_match = re.search(
@@ -990,6 +1008,38 @@ def select_evidence(
     }
 
     remaining = list(scored)
+
+    # ------------------------------------------------------
+    # DIRECT-DEFINITION GATE
+    # ------------------------------------------------------
+    # For a simple "What is X?" question, a high-quality direct
+    # definition already answers the question. Do not pad the answer
+    # with secondary sentences merely because they mention X. This
+    # also prevents PDF column fragments from being concatenated with
+    # an otherwise clean definition.
+    if "identity" in required_targets:
+        direct_definitions = [
+            item
+            for item in remaining
+            if (
+                float(item.get("identity_score", 0.0)) >= 0.90
+                and float(item.get("quality", 0.0)) >= 0.80
+                and float(item.get("contamination", 0.0)) < 0.20
+            )
+        ]
+
+        if direct_definitions:
+            direct_definitions.sort(
+                key=lambda item: (
+                    float(item.get("identity_score", 0.0)),
+                    float(item.get("quality", 0.0)),
+                    float(item.get("evidence_score", 0.0)),
+                    float(item.get("semantic", 0.0)),
+                ),
+                reverse=True,
+            )
+            best = direct_definitions[0]
+            return [best]
 
     # ------------------------------------------------------
     # PASS 1: satisfy question targets.
