@@ -1189,6 +1189,24 @@ def select_evidence(
     return selected
 
 
+def _attach_evidence_provenance(
+    evidence: List[Dict[str, Any]],
+    documents: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Attach originating document metadata to selected evidence."""
+    for item in evidence or []:
+        text = str(item.get("text", "")).strip()
+        if not text:
+            continue
+        for doc in documents or []:
+            if text in str(doc.get("text", "")):
+                item["doc_id"] = doc.get("doc_id")
+                item["source"] = doc.get("source", "unknown")
+                item["domain"] = doc.get("domain", "general")
+                break
+    return evidence
+
+
 # ==========================================================
 # PUBLIC API
 # ==========================================================
@@ -1293,6 +1311,11 @@ def generate_answer(
                 ),
             }
         )
+
+    evidence = _attach_evidence_provenance(
+        evidence,
+        documents,
+    )
 
     best_semantic = max(
         (

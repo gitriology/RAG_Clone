@@ -23,18 +23,22 @@ function App() {
     setMessages((prev) => [...prev, userMsg, loadingMsg]);
 
     try {
-      const data = await sendQuery(input);
+      const queryText = input.trim();
+      const data = await sendQuery(queryText, {
+        topKDocuments: 3,
+        maxSentences: 3,
+      });
 
-      // The backend is the source of truth. Do not truncate or
-      // otherwise rewrite the answer returned by the RAG pipeline.
+      // Backend is the single source of truth. Never recompute, truncate,
+      // clamp, or rescore the returned answer or confidence.
       const botMsg = {
         type: "bot",
-        text: data.answer ?? "",
-        confidence:
-          typeof data.confidence === "number"
-            ? data.confidence
-            : Number(data.confidence ?? 0),
-        sources: data.sources ?? [],
+        text: String(data.answer ?? ""),
+        confidence: Number(data.confidence ?? 0),
+        sources: Array.isArray(data.sources) ? data.sources : [],
+        pipelineVersion: data.pipeline_version,
+        confidenceCalibration: data.meta?.confidence_calibration ?? {},
+        answerValid: Boolean(data.meta?.answer_valid),
       };
 
       setMessages((prev) => {

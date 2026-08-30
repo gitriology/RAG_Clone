@@ -30,6 +30,8 @@ from backend.generation.evidence_fusion import (
 
 from backend.reranker.scoring.confidence.confidence_score import (
     compute_confidence,
+    build_confidence_breakdown,
+    CALIBRATION_VERSION,
 )
 
 from backend.evidence_graph.graph_builder import (
@@ -1557,17 +1559,27 @@ def run_pipeline(
     # PIPELINE CONFIDENCE
     # ======================================================
 
+    selected_evidence_for_confidence = generation.get(
+        "selected_sentences",
+        [],
+    )
+
     confidence = safe_float(
         compute_confidence(
             documents=top_docs,
             validation=validation,
             retrieval_confidence=retrieval_confidence,
-            evidence=generation.get(
-                "selected_sentences",
-                [],
-            ),
+            evidence=selected_evidence_for_confidence,
             answer=answer,
         )
+    )
+
+    confidence_breakdown = build_confidence_breakdown(
+        documents=top_docs,
+        validation=validation,
+        retrieval_confidence=retrieval_confidence,
+        evidence=selected_evidence_for_confidence,
+        answer=answer,
     )
 
     print()
@@ -1601,17 +1613,19 @@ def run_pipeline(
     )
 
     # ======================================================
-    # MINIMUM CONFIDENCE
+    # LOW-CONFIDENCE POLICY
     # ======================================================
+    # Never silently discard a generated answer because of its confidence.
+    # The CLI and API must expose the same answer and the same score.
 
-    if confidence < MIN_CONFIDENCE:
+    low_confidence = confidence < MIN_CONFIDENCE
 
+    if low_confidence:
         print()
         print(
-            "Low overall confidence."
+            "[Pipeline] Low overall confidence; returning the result with "
+            "its calibrated score for transparent API handling."
         )
-
-        return []
 
     # ======================================================
     # SOURCE DOCUMENTS
@@ -1763,6 +1777,8 @@ def run_pipeline(
 
         "query": query,
 
+        "pipeline_version": "confidence-calibration-v3",
+
         # ==================================================
         # Ranking
         # ==================================================
@@ -1800,16 +1816,19 @@ def run_pipeline(
         "answer_valid": answer_valid,
 
         "confidence_calibration": {
-            "method": "evidence_aware_composite_v2",
+            **confidence_breakdown,
+            "version": CALIBRATION_VERSION,
             "score_range": [0.0, 1.0],
             "answer_validation_scope": validation.get(
                 "validation_scope",
                 "unknown",
             ),
             "answer_validation_confidence": answer_confidence,
+            "answer_agreement": answer_confidence,
             "selected_evidence_count": len(
                 selected_evidence
             ),
+            "low_confidence": low_confidence,
         },
 
         # ==================================================

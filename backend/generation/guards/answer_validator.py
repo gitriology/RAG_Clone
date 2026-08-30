@@ -86,9 +86,15 @@ def validate_answer(
     print("[Answer Validation] Candidates:", len(candidates))
     print("[Answer Validation] Best semantic agreement:", f"{best:.4f}")
 
+    is_valid = best >= float(threshold)
+
     return {
-        "is_valid": best >= float(threshold),
+        "is_valid": is_valid,
+        # Backwards-compatible field. This is semantic agreement, not a
+        # probability of factual correctness.
         "confidence": best,
+        "answer_agreement": best,
         "validation_scope": scope,
         "candidate_count": len(candidates),
+        "threshold": float(threshold),
     }
