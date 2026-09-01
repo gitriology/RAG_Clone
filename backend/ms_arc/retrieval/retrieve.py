@@ -661,6 +661,49 @@ def retrieve(
                             ]
                         ),
 
+                    "ranking_score":
+                        float(
+                            item.get(
+                                "ranking_score",
+                                item.get(
+                                    "hybrid_score",
+                                    0.0,
+                                ),
+                            )
+                        ),
+
+                    "lexical_anchor_score":
+                        float(
+                            item.get(
+                                "lexical_anchor_score",
+                                0.0,
+                            )
+                        ),
+
+                    "exact_phrase_match":
+                        bool(
+                            item.get(
+                                "exact_phrase_match",
+                                False,
+                            )
+                        ),
+
+                    "reference_match":
+                        bool(
+                            item.get(
+                                "reference_match",
+                                False,
+                            )
+                        ),
+
+                    "matched_focus":
+                        list(
+                            item.get(
+                                "matched_focus",
+                                [],
+                            )
+                        ),
+
                     "fusion_method":
                         fusion_method,
 

@@ -1,31 +1,3 @@
-"""
-Optimization #21
-----------------
-
-Production Evidence Graph + Evidence State integration test.
-
-This test verifies that the research modules are not merely
-working in isolation.
-
-It verifies that the actual production pipeline:
-
-    run_pipeline()
-
-        ↓
-
-    MS-ARC
-
-        ↓
-
-    Evidence Graph
-
-        ↓
-
-    Evidence State
-
-contains the integrated research artifacts in its result.
-"""
-
 from unittest.mock import patch
 
 from backend.reranker.scoring.run_rerank import (

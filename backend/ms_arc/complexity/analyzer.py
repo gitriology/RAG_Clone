@@ -7,6 +7,7 @@ from backend.ms_arc.state.retrieval_state import RetrievalState
 from backend.ms_arc.utils.helpers import normalize
 
 from backend.models.model_registry import ModelRegistry
+from backend.retrieval.query_matching import analyze_query
 
 # Load spaCy model once
 nlp = ModelRegistry.get_nlp()
@@ -77,6 +78,8 @@ class QueryComplexityAnalyzer:
     def analyze(self, state: RetrievalState) -> RetrievalState:
 
         query = state.query.strip()
+
+        query_analysis = analyze_query(query)
 
         doc = nlp(query)
 
@@ -176,9 +179,21 @@ class QueryComplexityAnalyzer:
 
             topk = 10
 
-        state.query_type = query_type
+        # Retrieval depth must follow the question structure, not only a
+        # generic complexity score. Multi-part questions need enough context
+        # to cover both sides/steps/causes.
+        intents = set(query_analysis.get("intents", []))
+        if "compare" in intents:
+            topk = max(topk, 10)
+        elif "why" in intents or "how" in intents or "explain" in intents:
+            topk = max(topk, 8)
+        elif len(query_analysis.get("focus_phrases", [])) >= 2:
+            topk = max(topk, 6)
 
+        state.query_type = query_type
         state.recommended_topk = topk
+
+        state.debug["query_analysis"] = query_analysis
 
         state.debug["complexity"] = {
 

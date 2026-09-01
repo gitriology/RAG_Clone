@@ -25,7 +25,7 @@ function App() {
     try {
       const queryText = input.trim();
       const data = await sendQuery(queryText, {
-        topKDocuments: 3,
+        topKDocuments: 5,
         maxSentences: 3,
       });
 

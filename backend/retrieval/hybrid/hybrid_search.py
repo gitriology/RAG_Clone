@@ -16,8 +16,14 @@ outside this module.
 """
 
 import numpy as np
+import re
 
 from backend.retrieval.dense.embedder import encode_query
+from backend.retrieval.query_matching import (
+    analyze_query,
+    lexical_match_score,
+    reference_present,
+)
 
 
 # ==========================================================
@@ -94,6 +100,50 @@ def _rrf_score(
         )
 
     return score
+
+
+# ==========================================================
+# LEXICAL ANCHOR RECOVERY
+# ==========================================================
+
+
+def _anchor_candidates(query, texts, limit_per_focus=4):
+    """Recover exact named/reference matches that min-max fusion can hide.
+
+    This is intentionally independent of dense similarity. It is especially
+    useful for legal references (Article 12), acronyms and multi-word names.
+    """
+    analysis = analyze_query(query)
+    focus = analysis.get("focus_phrases", [])
+    references = set(analysis.get("references", []))
+    selected = {}
+
+    for phrase in focus:
+        scored = []
+        for idx, text in enumerate(texts):
+            if phrase in references:
+                ok = reference_present(text, phrase)
+            else:
+                detail = lexical_match_score(phrase, text)
+                ok = phrase in detail.get("matched", [])
+            if not ok:
+                continue
+
+            # Prefer a real provision/definition over a table-of-contents-only
+            # hit when the reference is legal/numbered.
+            score = 1.0
+            lower = str(text).lower()
+            if phrase in references and re.search(rf"(?<!\\d){re.escape(phrase.split()[-1])}\\s*[.)]\\s*[a-z]", lower):
+                score += 0.20
+            if " definition" in lower or " means " in lower or " refers to " in lower:
+                score += 0.10
+            scored.append((score, idx))
+
+        scored.sort(reverse=True)
+        for _, idx in scored[:limit_per_focus]:
+            selected[idx] = True
+
+    return list(selected.keys())
 
 
 # ==========================================================
@@ -407,6 +457,21 @@ def hybrid_search(
         f"{len(all_doc_ids)}"
     )
 
+    # Exact lexical/reference anchors are added to the candidate pool before
+    # fusion. This prevents an exact answer from being lost just because a
+    # long chunk received a slightly lower dense/min-max score.
+    anchor_ids = _anchor_candidates(
+        query,
+        texts,
+        limit_per_focus=4,
+    )
+    all_doc_ids.update(anchor_ids)
+
+    if anchor_ids:
+        print(
+            f"[Hybrid Retrieval] Lexical anchor candidates: {len(anchor_ids)}"
+        )
+
     # ======================================================
     # FUSION
     # ======================================================
@@ -459,6 +524,20 @@ def hybrid_search(
             )
         )
 
+        lexical_detail = lexical_match_score(
+            query,
+            texts[doc_id],
+        )
+        lexical_anchor_score = float(
+            lexical_detail.get("score", 0.0)
+        )
+        reference_match = bool(
+            lexical_detail.get("reference_match", False)
+        )
+        exact_phrase_match = bool(
+            lexical_detail.get("exact_phrase", False)
+        )
+
         # --------------------------------------------------
         # MIN-MAX FUSION
         # --------------------------------------------------
@@ -489,6 +568,17 @@ def hybrid_search(
                 rrf_k=rrf_k,
             )
 
+        # Keep the existing fusion score intact as a diagnostic, then use a
+        # small query-grounding boost for ranking. Exact references are the
+        # strongest anchor; ordinary exact phrases are next.
+        ranking_score = float(hybrid_score)
+        if lexical_anchor_score > 0.0:
+            ranking_score += 0.18 * lexical_anchor_score
+        if exact_phrase_match:
+            ranking_score += 0.10
+        if reference_match:
+            ranking_score += 0.30
+
         merged_results.append({
 
             "doc_id":
@@ -512,6 +602,21 @@ def hybrid_search(
             "hybrid_score":
                 float(hybrid_score),
 
+            "ranking_score":
+                float(ranking_score),
+
+            "lexical_anchor_score":
+                lexical_anchor_score,
+
+            "exact_phrase_match":
+                exact_phrase_match,
+
+            "reference_match":
+                reference_match,
+
+            "matched_focus":
+                list(lexical_detail.get("matched", [])),
+
             "dense_rank":
                 dense_rank,
 
@@ -528,8 +633,13 @@ def hybrid_search(
     # ======================================================
 
     merged_results.sort(
-        key=lambda x:
-            x["hybrid_score"],
+        key=lambda x: (
+            x.get("reference_match", False),
+            x.get("exact_phrase_match", False),
+            x.get("lexical_anchor_score", 0.0),
+            x.get("ranking_score", x.get("hybrid_score", 0.0)),
+            x.get("hybrid_score", 0.0),
+        ),
         reverse=True,
     )
 
@@ -563,6 +673,7 @@ def hybrid_search(
             f"dense={document['dense_score']:.4f} "
             f"bm25={document['bm25_score']:.4f} "
             f"hybrid={document['hybrid_score']:.6f} "
+            f"anchor={document.get('lexical_anchor_score', 0.0):.4f} "
             f"dense_rank={document['dense_rank']} "
             f"sparse_rank={document['sparse_rank']}"
         )

@@ -156,6 +156,49 @@ def retrieve(
                     )
                 ),
 
+            "ranking_score":
+                float(
+                    doc.metadata.get(
+                        "ranking_score",
+                        doc.metadata.get(
+                            "hybrid_score",
+                            0.0,
+                        ),
+                    )
+                ),
+
+            "lexical_anchor_score":
+                float(
+                    doc.metadata.get(
+                        "lexical_anchor_score",
+                        0.0,
+                    )
+                ),
+
+            "exact_phrase_match":
+                bool(
+                    doc.metadata.get(
+                        "exact_phrase_match",
+                        False,
+                    )
+                ),
+
+            "reference_match":
+                bool(
+                    doc.metadata.get(
+                        "reference_match",
+                        False,
+                    )
+                ),
+
+            "matched_focus":
+                list(
+                    doc.metadata.get(
+                        "matched_focus",
+                        [],
+                    )
+                ),
+
             # ------------------------------------------------
             # Fusion
             # ------------------------------------------------

@@ -50,3 +50,14 @@ def test_breakdown_matches_confidence():
     score = compute_confidence(docs, validation, 0.8, evidence=evidence, answer="x")
     breakdown = build_confidence_breakdown(docs, validation, 0.8, evidence=evidence, answer="x")
     assert abs(score - breakdown["calibrated_confidence"]) < 1e-9
+
+
+def test_unsupported_high_retrieval_is_low_confidence():
+    score = compute_confidence(
+        [{"rerank_score": 10.0, "context_score": 1.0}],
+        {"is_valid": False, "confidence": 0.0},
+        0.99,
+        evidence=[],
+        answer="Sorry, I couldn't find reliable information for your question.",
+    )
+    assert score <= 0.15

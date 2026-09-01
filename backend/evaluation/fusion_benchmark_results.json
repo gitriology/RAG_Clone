@@ -11,40 +11,24 @@
     "results": {
         "minmax": {
             "fusion_method": "minmax",
-            "queries_total": 5,
-            "queries_evaluated": 5,
+            "queries_total": 10,
+            "queries_evaluated": 10,
             "queries_failed": 0,
             "top_k": 3,
-            "recall_at_3": 0.2,
-            "precision_at_3": 0.06666666666666667,
-            "hit_rate_at_3": 0.2,
-            "mrr_at_3": 0.2,
+            "recall_at_3": 1.0,
+            "precision_at_3": 0.36666666666666664,
+            "hit_rate_at_3": 1.0,
+            "mrr_at_3": 0.85,
             "query_results": [
                 {
-                    "query": "what is machine learning?",
+                    "query": "What is machine learning?",
                     "relevant_doc_ids": [
-                        6
+                        27
                     ],
                     "retrieved_doc_ids": [
-                        1885,
-                        1887,
-                        1959
-                    ],
-                    "fusion_method": "minmax",
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
-                },
-                {
-                    "query": "what is WHO?",
-                    "relevant_doc_ids": [
-                        108
-                    ],
-                    "retrieved_doc_ids": [
-                        108,
-                        1936,
-                        1877
+                        27,
+                        25,
+                        0
                     ],
                     "fusion_method": "minmax",
                     "recall_at_3": 1.0,
@@ -53,75 +37,186 @@
                     "mrr_at_3": 1.0
                 },
                 {
-                    "query": "what is ISRO?",
+                    "query": "Define machine learning.",
                     "relevant_doc_ids": [
-                        25
+                        27
                     ],
                     "retrieved_doc_ids": [
-                        1565,
-                        1543,
-                        1731
+                        27,
+                        18,
+                        257
                     ],
                     "fusion_method": "minmax",
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
                 },
                 {
-                    "query": "define machine learning",
+                    "query": "What is an algorithm?",
                     "relevant_doc_ids": [
-                        6
+                        23
                     ],
                     "retrieved_doc_ids": [
-                        1885,
-                        1891,
-                        1967
+                        23,
+                        27,
+                        24
                     ],
                     "fusion_method": "minmax",
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
                 },
                 {
-                    "query": "difference between supervised and unsupervised learning",
+                    "query": "What is supervised learning?",
                     "relevant_doc_ids": [
-                        114
+                        68
                     ],
                     "retrieved_doc_ids": [
-                        1993,
-                        1891,
-                        1994
+                        228,
+                        68,
+                        1
                     ],
                     "fusion_method": "minmax",
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.5
+                },
+                {
+                    "query": "What is unsupervised learning?",
+                    "relevant_doc_ids": [
+                        37
+                    ],
+                    "retrieved_doc_ids": [
+                        200,
+                        37,
+                        199
+                    ],
+                    "fusion_method": "minmax",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.5
+                },
+                {
+                    "query": "Difference between supervised and unsupervised learning.",
+                    "relevant_doc_ids": [
+                        37
+                    ],
+                    "retrieved_doc_ids": [
+                        200,
+                        37,
+                        199,
+                        344,
+                        20,
+                        1,
+                        186,
+                        206,
+                        345,
+                        0
+                    ],
+                    "fusion_method": "minmax",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.5
+                },
+                {
+                    "query": "What is reinforcement learning?",
+                    "relevant_doc_ids": [
+                        519
+                    ],
+                    "retrieved_doc_ids": [
+                        519,
+                        548,
+                        41
+                    ],
+                    "fusion_method": "minmax",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "What is regression?",
+                    "relevant_doc_ids": [
+                        65
+                    ],
+                    "retrieved_doc_ids": [
+                        65,
+                        108,
+                        35
+                    ],
+                    "fusion_method": "minmax",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "What is classification?",
+                    "relevant_doc_ids": [
+                        258
+                    ],
+                    "retrieved_doc_ids": [
+                        258,
+                        493,
+                        494
+                    ],
+                    "fusion_method": "minmax",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "Difference between regression and classification.",
+                    "relevant_doc_ids": [
+                        65,
+                        35
+                    ],
+                    "retrieved_doc_ids": [
+                        65,
+                        35,
+                        229,
+                        144,
+                        378,
+                        391,
+                        224,
+                        73,
+                        1,
+                        364
+                    ],
+                    "fusion_method": "minmax",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.6666666666666666,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
                 }
             ]
         },
         "rrf": {
             "fusion_method": "rrf",
-            "queries_total": 5,
-            "queries_evaluated": 5,
+            "queries_total": 10,
+            "queries_evaluated": 10,
             "queries_failed": 0,
             "top_k": 3,
-            "recall_at_3": 0.2,
-            "precision_at_3": 0.06666666666666667,
-            "hit_rate_at_3": 0.2,
-            "mrr_at_3": 0.2,
+            "recall_at_3": 0.8,
+            "precision_at_3": 0.3,
+            "hit_rate_at_3": 0.8,
+            "mrr_at_3": 0.6333333333333333,
             "query_results": [
                 {
-                    "query": "what is machine learning?",
+                    "query": "What is machine learning?",
                     "relevant_doc_ids": [
-                        6
+                        27
                     ],
                     "retrieved_doc_ids": [
-                        1885,
-                        1887,
-                        1902
+                        25,
+                        0,
+                        565
                     ],
                     "fusion_method": "rrf",
                     "recall_at_3": 0.0,
@@ -130,14 +225,14 @@
                     "mrr_at_3": 0.0
                 },
                 {
-                    "query": "what is WHO?",
+                    "query": "Define machine learning.",
                     "relevant_doc_ids": [
-                        108
+                        27
                     ],
                     "retrieved_doc_ids": [
-                        108,
-                        1731,
-                        1877
+                        27,
+                        18,
+                        257
                     ],
                     "fusion_method": "rrf",
                     "recall_at_3": 1.0,
@@ -146,14 +241,117 @@
                     "mrr_at_3": 1.0
                 },
                 {
-                    "query": "what is ISRO?",
+                    "query": "What is an algorithm?",
                     "relevant_doc_ids": [
-                        25
+                        23
                     ],
                     "retrieved_doc_ids": [
-                        1565,
-                        1543,
-                        1731
+                        23,
+                        27,
+                        24
+                    ],
+                    "fusion_method": "rrf",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "What is supervised learning?",
+                    "relevant_doc_ids": [
+                        68
+                    ],
+                    "retrieved_doc_ids": [
+                        37,
+                        35,
+                        68
+                    ],
+                    "fusion_method": "rrf",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.3333333333333333
+                },
+                {
+                    "query": "What is unsupervised learning?",
+                    "relevant_doc_ids": [
+                        37
+                    ],
+                    "retrieved_doc_ids": [
+                        200,
+                        37,
+                        199
+                    ],
+                    "fusion_method": "rrf",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.5
+                },
+                {
+                    "query": "Difference between supervised and unsupervised learning.",
+                    "relevant_doc_ids": [
+                        37
+                    ],
+                    "retrieved_doc_ids": [
+                        200,
+                        37,
+                        199,
+                        344,
+                        20,
+                        1,
+                        186,
+                        206,
+                        345,
+                        0
+                    ],
+                    "fusion_method": "rrf",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 0.5
+                },
+                {
+                    "query": "What is reinforcement learning?",
+                    "relevant_doc_ids": [
+                        519
+                    ],
+                    "retrieved_doc_ids": [
+                        519,
+                        548,
+                        522
+                    ],
+                    "fusion_method": "rrf",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "What is regression?",
+                    "relevant_doc_ids": [
+                        65
+                    ],
+                    "retrieved_doc_ids": [
+                        65,
+                        108,
+                        77
+                    ],
+                    "fusion_method": "rrf",
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.3333333333333333,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
+                },
+                {
+                    "query": "What is classification?",
+                    "relevant_doc_ids": [
+                        258
+                    ],
+                    "retrieved_doc_ids": [
+                        200,
+                        494,
+                        398
                     ],
                     "fusion_method": "rrf",
                     "recall_at_3": 0.0,
@@ -162,36 +360,28 @@
                     "mrr_at_3": 0.0
                 },
                 {
-                    "query": "define machine learning",
+                    "query": "Difference between regression and classification.",
                     "relevant_doc_ids": [
-                        6
+                        65,
+                        35
                     ],
                     "retrieved_doc_ids": [
-                        1885,
-                        1891,
-                        1967
+                        65,
+                        35,
+                        144,
+                        391,
+                        224,
+                        73,
+                        235,
+                        1,
+                        364,
+                        226
                     ],
                     "fusion_method": "rrf",
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
-                },
-                {
-                    "query": "difference between supervised and unsupervised learning",
-                    "relevant_doc_ids": [
-                        114
-                    ],
-                    "retrieved_doc_ids": [
-                        1993,
-                        1967,
-                        1994
-                    ],
-                    "fusion_method": "rrf",
-                    "recall_at_3": 0.0,
-                    "precision_at_3": 0.0,
-                    "hit_rate_at_3": 0.0,
-                    "mrr_at_3": 0.0
+                    "recall_at_3": 1.0,
+                    "precision_at_3": 0.6666666666666666,
+                    "hit_rate_at_3": 1.0,
+                    "mrr_at_3": 1.0
                 }
             ]
         }
@@ -199,28 +389,28 @@
     "comparison": {
         "metrics": {
             "recall_at_3": {
-                "minmax": 0.2,
-                "rrf": 0.2,
-                "delta_rrf_minus_minmax": 0.0
+                "minmax": 1.0,
+                "rrf": 0.8,
+                "delta_rrf_minus_minmax": -0.19999999999999996
             },
             "precision_at_3": {
-                "minmax": 0.06666666666666667,
-                "rrf": 0.06666666666666667,
-                "delta_rrf_minus_minmax": 0.0
+                "minmax": 0.36666666666666664,
+                "rrf": 0.3,
+                "delta_rrf_minus_minmax": -0.06666666666666665
             },
             "hit_rate_at_3": {
-                "minmax": 0.2,
-                "rrf": 0.2,
-                "delta_rrf_minus_minmax": 0.0
+                "minmax": 1.0,
+                "rrf": 0.8,
+                "delta_rrf_minus_minmax": -0.19999999999999996
             },
             "mrr_at_3": {
-                "minmax": 0.2,
-                "rrf": 0.2,
-                "delta_rrf_minus_minmax": 0.0
+                "minmax": 0.85,
+                "rrf": 0.6333333333333333,
+                "delta_rrf_minus_minmax": -0.21666666666666667
             }
         },
-        "minmax_average_score": 0.16666666666666669,
-        "rrf_average_score": 0.16666666666666669,
-        "winner": "tie"
+        "minmax_average_score": 0.8041666666666667,
+        "rrf_average_score": 0.6333333333333333,
+        "winner": "minmax"
     }
 }

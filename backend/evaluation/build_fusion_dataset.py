@@ -35,39 +35,25 @@ OUTPUT_FILE = (
 
 
 EVALUATION_QUERIES = [
-
     # ------------------------------------------------------
-    # Basic factual queries
+    # Basic factual & definition queries
     # ------------------------------------------------------
-
-    "what is machine learning?",
-
-    "what is WHO?",
-
-    "what is ISRO?",
-
-    "define machine learning",
-
+    "What is machine learning?",
+    "Define machine learning.",
+    "What is an algorithm?",
     # ------------------------------------------------------
-    # Conceptual queries
+    # Conceptual & learning paradigm queries
     # ------------------------------------------------------
-
-    "difference between supervised and unsupervised learning",
-
-    "what is supervised learning?",
-
-    "what is unsupervised learning?",
-
+    "What is supervised learning?",
+    "What is unsupervised learning?",
+    "Difference between supervised and unsupervised learning.",
+    "What is reinforcement learning?",
     # ------------------------------------------------------
-    # Domain-specific questions
+    # Task-specific queries
     # ------------------------------------------------------
-
-    "where did Chandrayaan-3 land?",
-
-    "which organization developed Chandrayaan-3?",
-
-    "what is the purpose of Chandrayaan-3?",
-
+    "What is regression?",
+    "What is classification?",
+    "Difference between regression and classification.",
 ]
 
 

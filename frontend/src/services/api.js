@@ -9,7 +9,7 @@ const HEALTH_URL = `${API_BASE_URL}/api/health`;
 
 export const sendQuery = async (
   query,
-  { topKDocuments = 3, maxSentences = 3 } = {},
+  { topKDocuments = 5, maxSentences = 3 } = {},
 ) => {
   const res = await axios.post(API_URL, {
     query,
