@@ -22,6 +22,13 @@ from typing import Any, Dict, List, Tuple
 from sentence_transformers import util
 
 from backend.models.model_registry import ModelRegistry
+from backend.retrieval.query_matching import (
+    analyze_query,
+    evidence_support_score,
+    lexical_match_score,
+    definition_subject_matches,
+    reference_present,
+)
 
 
 # ==========================================================
@@ -350,53 +357,21 @@ def query_terms(query: str) -> List[str]:
 
 
 def detect_question_targets(query: str) -> Dict[str, bool]:
-    q = query.lower()
+    """Return generic question targets from the shared query analyser.
 
+    Retrieval already owns the canonical intent parser. Reusing it here keeps
+    answer selection, answerability and retrieval aligned without maintaining
+    a second topic-specific intent vocabulary.
+    """
+    intents = set(analyze_query(query).get("intents", []))
     return {
-        "identity": any(
-            phrase in q
-            for phrase in (
-                "what is",
-                "what was",
-                "tell me about",
-                "describe",
-                "explain",
-                "what does",
-            )
-        ),
-        "location": any(
-            phrase in q
-            for phrase in (
-                "where",
-                "location",
-                "land",
-                "landed",
-                "landing",
-            )
-        ),
-        "organization": any(
-            phrase in q
-            for phrase in (
-                "which organization",
-                "which organisation",
-                "organization",
-                "organisation",
-                "who developed",
-                "developed by",
-                "developed it",
-                "developer",
-                "operator",
-            )
-        ),
-        "date": any(
-            phrase in q
-            for phrase in (
-                "when",
-                "date",
-                "launched",
-                "launch date",
-            )
-        ),
+        "identity": "what" in intents or "explain" in intents,
+        "organization": "who" in intents,
+        "location": "where" in intents,
+        "date": "when" in intents,
+        "why": "why" in intents,
+        "how": "how" in intents,
+        "compare": "compare" in intents,
     }
 
 
@@ -436,37 +411,29 @@ def entity_alignment_score(
     query: str,
     sentence: str,
 ) -> Tuple[float, List[str]]:
+    """Boundary-aware query focus alignment.
 
-    entities = detect_query_entities(query)
-
-    if not entities:
+    The shared matcher deliberately avoids substring matches, so ``modi``
+    cannot match ``MODIS``. Explicit references such as Article 12 are also
+    handled by the same matcher used by answerability.
+    """
+    analysis = analyze_query(query)
+    focus = list(analysis.get("focus_phrases", []))
+    if not focus:
         return 1.0, []
 
-    s = sentence.lower()
     matched: List[str] = []
+    references = set(analysis.get("references", []))
+    for phrase in focus:
+        if phrase in references:
+            ok = reference_present(sentence, phrase)
+        else:
+            from backend.retrieval.query_matching import phrase_present
+            ok = phrase_present(sentence, phrase)
+        if ok:
+            matched.append(phrase)
 
-    for entity in entities:
-        if entity in s:
-            matched.append(entity)
-
-    # Strong explicit Mars Orbiter Mission match.
-    if (
-        "mars orbiter mission" in s
-        or re.search(r"\bmom\b", s)
-    ) and (
-        "mars" in entities
-        or "mom" in entities
-        or "mars orbiter mission" in entities
-    ):
-        return 1.0, matched
-
-    if not matched:
-        return 0.0, []
-
-    return min(
-        len(matched) / len(entities),
-        1.0,
-    ), matched
+    return min(1.0, len(matched) / max(1, len(focus))), matched
 
 
 # ==========================================================
@@ -545,6 +512,10 @@ def identity_evidence_score(
         s,
     ):
         score = 1.0
+
+    # A shared grammatical-subject check is stronger than a mere mention.
+    if score == 0.0 and definition_subject_matches(query, sentence):
+        score = 0.75
 
     # Do not give high identity credit to generic incidental facts.
     if (
@@ -663,46 +634,58 @@ def date_evidence_score(
     return 0.0
 
 
+def _intent_shape_score(query: str, sentence: str, intent: str) -> float:
+    """Return a bounded answer-shape score for one generic intent."""
+    intents = set(analyze_query(query).get("intents", []))
+    if intent not in intents:
+        return 0.0
+    return float(evidence_support_score(query, sentence).get("intent_cue", 0.0))
+
+
 def answer_target_score(
     query: str,
     sentence: str,
 ) -> Tuple[float, List[str]]:
-
     targets = detect_question_targets(query)
-
-    identity = identity_evidence_score(query, sentence)
-    organization = organization_evidence_score(query, sentence)
-    location = location_evidence_score(query, sentence)
-    date = date_evidence_score(query, sentence)
-
+    values: List[float] = []
     covered: List[str] = []
 
-    if targets["identity"] and identity >= 0.45:
-        covered.append("identity")
-
-    if targets["organization"] and organization >= 0.45:
-        covered.append("organization")
-
-    if targets["location"] and location >= 0.45:
-        covered.append("location")
-
-    if targets["date"] and date >= 0.45:
-        covered.append("date")
-
-    values = []
-
     if targets["identity"]:
-        values.append(identity)
+        value = identity_evidence_score(query, sentence)
+        values.append(value)
+        if value >= 0.45:
+            covered.append("identity")
     if targets["organization"]:
-        values.append(organization)
+        value = organization_evidence_score(query, sentence)
+        values.append(value)
+        if value >= 0.45:
+            covered.append("organization")
     if targets["location"]:
-        values.append(location)
+        value = location_evidence_score(query, sentence)
+        values.append(value)
+        if value >= 0.45:
+            covered.append("location")
     if targets["date"]:
-        values.append(date)
+        value = date_evidence_score(query, sentence)
+        values.append(value)
+        if value >= 0.45:
+            covered.append("date")
+
+    for name in ("why", "how"):
+        if targets[name]:
+            value = _intent_shape_score(query, sentence, name)
+            values.append(value)
+            if value >= 0.50:
+                covered.append(name)
+
+    if targets["compare"]:
+        value = _intent_shape_score(query, sentence, "compare")
+        values.append(value)
+        if value >= 0.50:
+            covered.append("compare")
 
     if not values:
         return 0.0, covered
-
     return min(sum(values) / len(values), 1.0), covered
 
 
@@ -770,6 +753,23 @@ def sentence_quality(sentence: str) -> float:
     # Very long sentences are usually multi-column or list merges.
     if len(words) > 70:
         score -= 0.20
+
+    # Generic PDF page-furniture / column-interleaving signals. These are
+    # intentionally soft so legitimate long technical sentences survive.
+    furniture_tokens = (
+        "next", "back", "key point", "table of contents",
+        "supporting materials", "references", "fig.", "figure",
+    )
+    furniture_hits = sum(1 for token in furniture_tokens if token in lower)
+    if len(words) > 35 and furniture_hits >= 2:
+        score -= 0.35
+    if len(words) > 45 and re.search(r"\b(?:next|back)\b.*\b(?:introduction|references|figure|contents)\b", lower):
+        score -= 0.25
+
+    # A high ratio of semicolons/parenthetical fragments in a long sentence
+    # is a useful generic signal for merged PDF columns.
+    if len(words) > 50 and (s.count(";") >= 3 or s.count("(") >= 4):
+        score -= 0.15
 
     # Excessive bullet markers / separators indicate extraction damage.
     if s.count("•") >= 2:
@@ -915,21 +915,27 @@ def score_sentences(
             sentence,
         )
 
+        shared_support = evidence_support_score(query, sentence)
+        shared_lexical = float(shared_support.get("score", 0.0))
+        intent_cue = float(shared_support.get("intent_cue", 0.0))
+
         # --------------------------------------------------
         # Quality-aware evidence score.
-        #
-        # Direct target evidence is dominant.
-        # Semantic similarity cannot rescue badly extracted text.
+        # Query grounding and answer shape are deliberately stronger than
+        # raw semantic similarity. This prevents topical mentions from
+        # becoming answers.
         # --------------------------------------------------
 
         evidence_score = (
-            0.25 * semantic
-            + 0.08 * lexical
-            + 0.32 * target_score
-            + 0.12 * entity_score
-            + 0.15 * quality
-            + 0.04 * organization_score
-            + 0.04 * identity_score
+            0.20 * semantic
+            + 0.10 * lexical
+            + 0.18 * shared_lexical
+            + 0.27 * target_score
+            + 0.10 * entity_score
+            + 0.10 * quality
+            + 0.03 * intent_cue
+            + 0.01 * organization_score
+            + 0.01 * identity_score
         )
 
         evidence_score *= (
@@ -950,6 +956,8 @@ def score_sentences(
                 "text": sentence,
                 "semantic": semantic,
                 "lexical": lexical,
+                "query_grounding": shared_lexical,
+                "intent_cue": intent_cue,
                 "target_score": target_score,
                 "entity_score": entity_score,
                 "matched_entities": matched_entities,

@@ -244,6 +244,9 @@ def compute_confidence(
     ranking = _ranking_confidence(documents)
     context = _context_confidence(documents)
     answer_agreement = _answer_agreement(validation)
+    query_grounding = _clamp(validation.get("query_grounding", 1.0 if validation.get("is_valid", False) else 0.0))
+    answerability_payload = validation.get("answerability", {})
+    answerable = bool(answerability_payload.get("answerable", validation.get("is_valid", False)))
 
     evidence_stats = _selected_evidence_stats(evidence)
     evidence_count = evidence_stats["count"]
@@ -272,11 +275,12 @@ def compute_confidence(
         0.12 * retrieval
         + 0.08 * ranking
         + 0.08 * context
-        + 0.20 * answer_agreement
-        + 0.22 * relevance
-        + 0.10 * semantic
+        + 0.14 * answer_agreement
+        + 0.16 * query_grounding
+        + 0.20 * relevance
+        + 0.09 * semantic
         + 0.06 * quality
-        + 0.06 * target_support
+        + 0.05 * target_support
         + 0.08 * source_consistency
     )
 
@@ -294,6 +298,9 @@ def compute_confidence(
     if not is_valid:
         raw *= 0.55
 
+    if not answerable:
+        raw *= 0.55
+
     if evidence_count > 0 and target_support >= 0.5 and relevance >= 0.75:
         raw += 0.03
 
@@ -305,6 +312,10 @@ def compute_confidence(
 
     if not is_valid:
         calibrated = min(calibrated, 0.40)
+    if not answerable:
+        calibrated = min(calibrated, 0.25)
+    elif query_grounding < 0.48:
+        calibrated = min(calibrated, 0.45)
 
     calibrated = _clamp(calibrated)
 
@@ -322,6 +333,8 @@ def compute_confidence(
             "ranking_concentration": ranking,
             "context_support": context,
             "answer_agreement": answer_agreement,
+            "query_grounding": query_grounding,
+            "answerable": answerable,
             "evidence_relevance": relevance,
             "evidence_semantic": semantic,
             "evidence_quality": quality,
@@ -377,6 +390,9 @@ def build_confidence_breakdown(
     ranking = _ranking_confidence(documents)
     context = _context_confidence(documents)
     answer_agreement = _answer_agreement(validation)
+    query_grounding = _clamp(validation.get("query_grounding", 1.0 if validation.get("is_valid", False) else 0.0))
+    answerability_payload = validation.get("answerability", {})
+    answerable = bool(answerability_payload.get("answerable", validation.get("is_valid", False)))
 
     relevance = evidence_stats["relevance"] if evidence_stats["count"] else 0.0
     semantic = evidence_stats["semantic"] if evidence_stats["count"] else 0.0
@@ -389,11 +405,12 @@ def build_confidence_breakdown(
         0.12 * retrieval
         + 0.08 * ranking
         + 0.08 * context
-        + 0.20 * answer_agreement
-        + 0.22 * relevance
-        + 0.10 * semantic
+        + 0.14 * answer_agreement
+        + 0.16 * query_grounding
+        + 0.20 * relevance
+        + 0.09 * semantic
         + 0.06 * quality
-        + 0.06 * target_support
+        + 0.05 * target_support
         + 0.08 * source_consistency
     )
     raw -= 0.16 * contamination
@@ -401,6 +418,8 @@ def build_confidence_breakdown(
     if evidence_stats["count"] == 0:
         raw *= 0.55
     if not bool(validation.get("is_valid", False)):
+        raw *= 0.55
+    if not answerable:
         raw *= 0.55
     if evidence_stats["count"] > 0 and target_support >= 0.5 and relevance >= 0.75:
         raw += 0.03
@@ -411,6 +430,10 @@ def build_confidence_breakdown(
         calibrated = min(calibrated, 0.45)
     if not bool(validation.get("is_valid", False)):
         calibrated = min(calibrated, 0.40)
+    if not answerable:
+        calibrated = min(calibrated, 0.25)
+    elif query_grounding < 0.48:
+        calibrated = min(calibrated, 0.45)
 
     return {
         "method": CALIBRATION_VERSION,
@@ -422,6 +445,8 @@ def build_confidence_breakdown(
             "ranking_concentration": ranking,
             "context_support": context,
             "answer_agreement": answer_agreement,
+            "query_grounding": query_grounding,
+            "answerable": answerable,
             "evidence_relevance": relevance,
             "evidence_semantic": semantic,
             "evidence_quality": quality,

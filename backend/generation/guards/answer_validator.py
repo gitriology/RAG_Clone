@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 
 from backend.models.model_registry import ModelRegistry
+from backend.retrieval.query_matching import assess_answerability, evidence_support_score
 
 
 def validate_answer(
@@ -12,6 +13,7 @@ def validate_answer(
     documents,
     threshold=0.40,
     evidence: Optional[Iterable] = None,
+    query: str = "",
 ):
     """
     Validate the final answer against the evidence that actually supports it.
@@ -43,22 +45,15 @@ def validate_answer(
     scope = "selected_evidence"
 
     if not candidates:
-        for doc in documents or []:
-            if isinstance(doc, dict):
-                text = doc.get("text", "")
-            else:
-                text = getattr(doc, "text", "")
-
-            if text and str(text).strip():
-                candidates.append(str(text).strip())
-
-        scope = "retrieved_documents"
-
-    if not candidates:
+        # Do not validate an answer against arbitrary retrieved documents.
+        # Retrieval relevance is not evidence that the answer is supported.
         return {
             "is_valid": False,
             "confidence": 0.0,
-            "validation_scope": scope,
+            "answer_agreement": 0.0,
+            "query_grounding": 0.0,
+            "answerability": {"answerable": False, "score": 0.0, "reason": "no_selected_evidence"},
+            "validation_scope": "no_selected_evidence",
         }
 
     model = ModelRegistry.get_validation_model()
@@ -86,14 +81,28 @@ def validate_answer(
     print("[Answer Validation] Candidates:", len(candidates))
     print("[Answer Validation] Best semantic agreement:", f"{best:.4f}")
 
-    is_valid = best >= float(threshold)
+    grounding = assess_answerability(query, candidates, answer=answer) if query else {
+        "answerable": True,
+        "score": 1.0,
+        "reason": "query_not_supplied",
+    }
+    query_grounding = float(grounding.get("score", 0.0))
+
+    # Agreement alone is insufficient because the answer is extractive from
+    # these same sentences. Require independent query-to-evidence grounding.
+    is_valid = (
+        best >= float(threshold)
+        and bool(grounding.get("answerable", False))
+    )
+
+    validation_confidence = min(best, query_grounding)
 
     return {
         "is_valid": is_valid,
-        # Backwards-compatible field. This is semantic agreement, not a
-        # probability of factual correctness.
-        "confidence": best,
+        "confidence": validation_confidence,
         "answer_agreement": best,
+        "query_grounding": query_grounding,
+        "answerability": grounding,
         "validation_scope": scope,
         "candidate_count": len(candidates),
         "threshold": float(threshold),

@@ -1389,9 +1389,11 @@ def run_pipeline(
     # QUESTION-AWARE GENERATION
     # ======================================================
 
+    # Answer selection sees the full validated/reranked candidate pool.
+    # Presentation/state still use the configured top-k documents.
     generation = generate_answer(
         query=query,
-        documents=top_docs,
+        documents=validated_docs,
         max_sentences=max_sentences,
     )
 
@@ -1531,6 +1533,7 @@ def run_pipeline(
             "selected_sentences",
             [],
         ),
+        query=query,
     )
 
     if not isinstance(
@@ -1777,7 +1780,7 @@ def run_pipeline(
 
         "query": query,
 
-        "pipeline_version": "confidence-calibration-v3",
+        "pipeline_version": "answer-selection-production-v2",
 
         # ==================================================
         # Ranking
@@ -1814,6 +1817,10 @@ def run_pipeline(
         ),
 
         "answer_valid": answer_valid,
+
+        "answerable": bool(validation.get("answerability", {}).get("answerable", False)),
+        "query_grounding": safe_float(validation.get("query_grounding", 0.0)),
+        "answerability_score": safe_float(validation.get("answerability", {}).get("score", 0.0)),
 
         "confidence_calibration": {
             **confidence_breakdown,
