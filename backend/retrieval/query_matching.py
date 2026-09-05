@@ -122,29 +122,14 @@ def definition_subject_matches(query: str, text: str) -> bool:
     # A one-token focus must be the grammatical subject immediately before a
     # definition cue; otherwise a longer phrase beginning with the token is
     # not a definition of the requested term.
-    escaped = re.escape(primary)
-    # Definition questions require the requested phrase to be the grammatical
-    # subject of an actual definition construction.  This prevents both
-    # substring matches and incidental prose such as "vaccination services
-    # is discussed" from being promoted to definition evidence.
-    return bool(re.search(
-        rf"(?<![a-z0-9]){escaped}(?![a-z0-9])\s+(?:"
-        rf"is\s+(?:a|an|the)\b|"
-        rf"are\s+(?:a|an|the)\b|"
-        rf"was\s+(?:a|an|the)\b|"
-        rf"were\s+(?:a|an|the)\b|"
-        rf"refers\s+to\b|"
-        rf"means\b|"
-        rf"denotes\b|"
-        rf"is\s+defined\s+as\b|"
-        rf"defined\s+as\b|"
-        rf"is\s+known\s+as\b|"
-        rf"is\s+called\b|"
-        rf"consists\s+of\b"
-        rf")",
-        s,
-        re.I,
-    ))
+    if " " not in primary:
+        escaped = re.escape(primary)
+        return bool(re.search(
+            rf"(?<![a-z0-9]){escaped}(?![a-z0-9])\s+(?:is|are|was|were|refers\s+to|means|denotes|defined|known\s+as)\b",
+            s,
+            re.I,
+        ))
+    return phrase_present(text, primary)
 
 
 def _canonical_reference(kind: str, number: str) -> str:

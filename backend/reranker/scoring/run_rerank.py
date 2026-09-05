@@ -1825,9 +1825,6 @@ def run_pipeline(
                 "unknown",
             ),
             "answer_validation_confidence": answer_confidence,
-            "answerable": bool(validation.get("answerable", answer_valid)),
-            "query_grounding": safe_float(validation.get("query_grounding", 0.0)),
-            "answerability_reason": validation.get("answerability_reason", ""),
             "answer_agreement": answer_confidence,
             "selected_evidence_count": len(
                 selected_evidence

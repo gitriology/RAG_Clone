@@ -21,7 +21,7 @@ import math
 from typing import Any, Dict, Iterable, List, Optional
 
 
-CALIBRATION_VERSION = "evidence_aware_v4_answerability"
+CALIBRATION_VERSION = "evidence_aware_v5_answer_form"
 
 
 def _clamp(value: Any, low: float = 0.0, high: float = 1.0) -> float:
@@ -126,21 +126,10 @@ def _answer_agreement(validation: Dict[str, Any]) -> float:
 
 
 def _query_grounding(validation: Dict[str, Any]) -> float:
-    """Independent query -> selected-evidence grounding signal.
-
-    Backward compatible with older validation dictionaries that did not expose
-    query grounding: a valid legacy result is treated as fully grounded.
-    """
+    """How strongly the selected evidence supports the actual query."""
     if "query_grounding" in validation:
         return _clamp(validation.get("query_grounding", 0.0))
-    return 1.0 if bool(validation.get("is_valid", False)) else 0.0
-
-
-def _answerable(validation: Dict[str, Any]) -> bool:
-    """Read answerability without breaking legacy validation callers."""
-    if "answerable" in validation:
-        return bool(validation.get("answerable", False))
-    return bool(validation.get("is_valid", False))
+    return 0.0
 
 
 def _selected_evidence_stats(
@@ -263,7 +252,6 @@ def compute_confidence(
     context = _context_confidence(documents)
     answer_agreement = _answer_agreement(validation)
     query_grounding = _query_grounding(validation)
-    answerable = _answerable(validation)
 
     evidence_stats = _selected_evidence_stats(evidence)
     evidence_count = evidence_stats["count"]
@@ -289,16 +277,16 @@ def compute_confidence(
     # Direct evidence is intentionally dominant.  Retrieval/ranking are
     # supporting signals and must not overpower a clean selected sentence.
     raw = (
-        0.12 * retrieval
-        + 0.08 * ranking
-        + 0.08 * context
-        + 0.12 * answer_agreement
-        + 0.18 * query_grounding
-        + 0.22 * relevance
-        + 0.10 * semantic
+        0.10 * retrieval
+        + 0.06 * ranking
+        + 0.06 * context
+        + 0.16 * answer_agreement
+        + 0.22 * query_grounding
+        + 0.18 * relevance
+        + 0.08 * semantic
         + 0.06 * quality
-        + 0.06 * target_support
-        + 0.08 * source_consistency
+        + 0.04 * target_support
+        + 0.04 * source_consistency
     )
 
     # Contamination is a real negative signal.  It is deliberately based on
@@ -313,17 +301,16 @@ def compute_confidence(
         raw *= 0.55
 
     if not is_valid:
-        raw *= 0.55
+        raw *= 0.45
 
-    # Independent answerability is a hard production safety signal.
-    # Semantic agreement alone must never create high confidence.
-    if not answerable:
-        raw *= 0.50
+    # Query grounding is the central anti-hallucination gate. An answer can
+    # agree perfectly with its own evidence while the evidence is unrelated.
+    if evidence_count > 0 and query_grounding < 0.35:
+        raw *= 0.45
+    elif evidence_count > 0 and query_grounding < 0.45:
+        raw *= 0.70
 
-    if query_grounding < 0.52:
-        raw *= 0.65
-
-    if evidence_count > 0 and target_support >= 0.5 and relevance >= 0.75:
+    if evidence_count > 0 and target_support >= 0.5 and relevance >= 0.75 and query_grounding >= 0.55:
         raw += 0.03
 
     raw = _clamp(raw)
@@ -333,12 +320,12 @@ def compute_confidence(
         calibrated = min(calibrated, 0.45)
 
     if not is_valid:
-        calibrated = min(calibrated, 0.40)
+        calibrated = min(calibrated, 0.22)
 
-    if not answerable:
+    if evidence_count > 0 and query_grounding < 0.35:
         calibrated = min(calibrated, 0.25)
-    elif query_grounding < 0.52:
-        calibrated = min(calibrated, 0.35)
+    elif evidence_count > 0 and query_grounding < 0.45:
+        calibrated = min(calibrated, 0.40)
 
     calibrated = _clamp(calibrated)
 
@@ -357,7 +344,6 @@ def compute_confidence(
             "context_support": context,
             "answer_agreement": answer_agreement,
             "query_grounding": query_grounding,
-            "answerable": answerable,
             "evidence_relevance": relevance,
             "evidence_semantic": semantic,
             "evidence_quality": quality,
@@ -367,8 +353,6 @@ def compute_confidence(
         },
         "selected_evidence_count": int(evidence_count),
         "answer_valid": is_valid,
-        "answerable": answerable,
-        "query_grounding": query_grounding,
     }
 
     print("\n" + "=" * 60)
@@ -378,8 +362,6 @@ def compute_confidence(
     print(f"Ranking Concentration    : {ranking:.4f}")
     print(f"Context Support          : {context:.4f}")
     print(f"Answer Agreement        : {answer_agreement:.4f}")
-    print(f"Query Grounding         : {query_grounding:.4f}")
-    print(f"Answerable              : {answerable}")
     print(f"Evidence Relevance       : {relevance:.4f}")
     print(f"Evidence Semantic        : {semantic:.4f}")
     print(f"Evidence Quality         : {quality:.4f}")
@@ -403,12 +385,7 @@ def build_confidence_breakdown(
     evidence: Optional[Iterable[Dict[str, Any]]] = None,
     answer: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Return diagnostics without duplicating confidence calculations.
-
-    The production pipeline calls this after ``compute_confidence`` only for
-    presentation.  The function uses the same formula and is kept as a
-    separate diagnostic API for tests and observability.
-    """
+    """Return the exact diagnostics used by compute_confidence."""
     documents = list(documents or [])
     validation = validation if isinstance(validation, dict) else {}
     evidence_stats = _selected_evidence_stats(evidence)
@@ -418,7 +395,6 @@ def build_confidence_breakdown(
     context = _context_confidence(documents)
     answer_agreement = _answer_agreement(validation)
     query_grounding = _query_grounding(validation)
-    answerable = _answerable(validation)
 
     relevance = evidence_stats["relevance"] if evidence_stats["count"] else 0.0
     semantic = evidence_stats["semantic"] if evidence_stats["count"] else 0.0
@@ -428,28 +404,28 @@ def build_confidence_breakdown(
     source_consistency = _selected_source_consistency(documents, evidence_stats)
 
     raw = (
-        0.12 * retrieval
-        + 0.08 * ranking
-        + 0.08 * context
-        + 0.12 * answer_agreement
-        + 0.18 * query_grounding
-        + 0.22 * relevance
-        + 0.10 * semantic
+        0.10 * retrieval
+        + 0.06 * ranking
+        + 0.06 * context
+        + 0.16 * answer_agreement
+        + 0.22 * query_grounding
+        + 0.18 * relevance
+        + 0.08 * semantic
         + 0.06 * quality
-        + 0.06 * target_support
-        + 0.08 * source_consistency
+        + 0.04 * target_support
+        + 0.04 * source_consistency
     )
     raw -= 0.16 * contamination
 
     if evidence_stats["count"] == 0:
         raw *= 0.55
     if not bool(validation.get("is_valid", False)):
-        raw *= 0.55
-    if not answerable:
-        raw *= 0.50
-    if query_grounding < 0.52:
-        raw *= 0.65
-    if evidence_stats["count"] > 0 and target_support >= 0.5 and relevance >= 0.75:
+        raw *= 0.45
+    if evidence_stats["count"] > 0 and query_grounding < 0.35:
+        raw *= 0.45
+    elif evidence_stats["count"] > 0 and query_grounding < 0.45:
+        raw *= 0.70
+    if evidence_stats["count"] > 0 and target_support >= 0.5 and relevance >= 0.75 and query_grounding >= 0.55:
         raw += 0.03
 
     raw = _clamp(raw)
@@ -457,11 +433,11 @@ def build_confidence_breakdown(
     if evidence_stats["count"] == 0:
         calibrated = min(calibrated, 0.45)
     if not bool(validation.get("is_valid", False)):
-        calibrated = min(calibrated, 0.40)
-    if not answerable:
+        calibrated = min(calibrated, 0.30)
+    if evidence_stats["count"] > 0 and query_grounding < 0.35:
         calibrated = min(calibrated, 0.25)
-    elif query_grounding < 0.52:
-        calibrated = min(calibrated, 0.35)
+    elif evidence_stats["count"] > 0 and query_grounding < 0.45:
+        calibrated = min(calibrated, 0.40)
 
     return {
         "method": CALIBRATION_VERSION,
@@ -474,7 +450,6 @@ def build_confidence_breakdown(
             "context_support": context,
             "answer_agreement": answer_agreement,
             "query_grounding": query_grounding,
-            "answerable": answerable,
             "evidence_relevance": relevance,
             "evidence_semantic": semantic,
             "evidence_quality": quality,
@@ -484,6 +459,4 @@ def build_confidence_breakdown(
         },
         "selected_evidence_count": int(evidence_stats["count"]),
         "answer_valid": bool(validation.get("is_valid", False)),
-        "answerable": answerable,
-        "query_grounding": query_grounding,
     }
