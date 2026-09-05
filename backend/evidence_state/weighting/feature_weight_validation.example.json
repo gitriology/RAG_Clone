@@ -1,0 +1,82 @@
+[
+  {
+    "label": 1,
+    "features": {
+      "retrieval_confidence": 0.95,
+      "graph_score": 0.8,
+      "evidence_quality": 0.9,
+      "uncertainty": 0.1,
+      "graph_coherence": 0.85
+    }
+  },
+  {
+    "label": 1,
+    "features": {
+      "retrieval_confidence": 0.88,
+      "graph_score": 0.72,
+      "evidence_quality": 0.86,
+      "uncertainty": 0.15,
+      "graph_coherence": 0.78
+    }
+  },
+  {
+    "label": 1,
+    "features": {
+      "retrieval_confidence": 0.82,
+      "graph_score": 0.75,
+      "evidence_quality": 0.8,
+      "uncertainty": 0.18,
+      "graph_coherence": 0.74
+    }
+  },
+  {
+    "label": 1,
+    "features": {
+      "retrieval_confidence": 0.76,
+      "graph_score": 0.68,
+      "evidence_quality": 0.78,
+      "uncertainty": 0.22,
+      "graph_coherence": 0.7
+    }
+  },
+  {
+    "label": 0,
+    "features": {
+      "retrieval_confidence": 0.25,
+      "graph_score": 0.2,
+      "evidence_quality": 0.3,
+      "uncertainty": 0.8,
+      "graph_coherence": 0.25
+    }
+  },
+  {
+    "label": 0,
+    "features": {
+      "retrieval_confidence": 0.35,
+      "graph_score": 0.28,
+      "evidence_quality": 0.34,
+      "uncertainty": 0.7,
+      "graph_coherence": 0.3
+    }
+  },
+  {
+    "label": 0,
+    "features": {
+      "retrieval_confidence": 0.42,
+      "graph_score": 0.32,
+      "evidence_quality": 0.4,
+      "uncertainty": 0.62,
+      "graph_coherence": 0.35
+    }
+  },
+  {
+    "label": 0,
+    "features": {
+      "retrieval_confidence": 0.3,
+      "graph_score": 0.38,
+      "evidence_quality": 0.36,
+      "uncertainty": 0.75,
+      "graph_coherence": 0.32
+    }
+  }
+]

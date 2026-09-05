@@ -1,0 +1,18 @@
+{
+    "optimization": "Optimization #23",
+    "method": "positive-logistic-weight-tuning",
+    "normalization": "mean-weight=1.0",
+    "weights": {
+        "evidence_quality": 1.15327,
+        "graph_coherence": 1.074603,
+        "graph_score": 1.112657,
+        "retrieval_confidence": 1.090854,
+        "uncertainty": 0.568616
+    },
+    "metadata": {
+        "validation_records": 8,
+        "equal_accuracy": 1.0,
+        "manual_accuracy": 1.0,
+        "tuned_accuracy": 1.0
+    }
+}
