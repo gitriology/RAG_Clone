@@ -349,6 +349,7 @@ print(
 def retrieve(
     state: RetrievalState,
     fusion_method: str = "minmax",
+    retrieval_k: int | None = None,
 ) -> RetrievalState:
     """
     Perform hybrid retrieval.
@@ -399,6 +400,12 @@ def retrieve(
         "candidate_k"
     )
 
+    requested_k = (
+        state.recommended_topk
+        if retrieval_k is None
+        else max(1, int(retrieval_k))
+    )
+
     results = hybrid_search(
 
         query=state.query,
@@ -409,7 +416,7 @@ def retrieve(
 
         texts=texts,
 
-        k=state.recommended_topk,
+        k=requested_k,
 
         candidate_k=candidate_k,
 
@@ -757,6 +764,10 @@ def retrieve(
     ] = results.get(
         "candidate_k"
     )
+
+    state.debug[
+        "retrieval_k_used"
+    ] = requested_k
 
     state.debug[
         "faiss_index_type"

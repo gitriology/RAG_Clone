@@ -62,6 +62,37 @@ def compute_stability(
     using Min-Max during stability evaluation.
     """
 
+    # Optimization #28: when the adaptive loop has already produced
+    # successive rankings, stability is computed from those rankings.
+    # This avoids the old three extra FAISS/BM25 searches per iteration.
+    adaptive_rankings = state.debug.get("adaptive_rankings", [])
+    if adaptive_rankings:
+        current = [str(x) for x in adaptive_rankings[-1]]
+        previous = [str(x) for x in adaptive_rankings[-2]] if len(adaptive_rankings) > 1 else None
+
+        if previous is None:
+            overlap_1 = 0.5
+            overlap_2 = 0.5
+        else:
+            overlap_1 = jaccard(previous, current)
+            overlap_2 = overlap_1
+
+        stability_score = (overlap_1 + overlap_2) / 2.0
+        current_k = state.debug.get("retrieval_k_used", len(current))
+
+        state.signals.stability = StabilityMetrics(
+            score=stability_score,
+            overlap_1=overlap_1,
+            overlap_2=overlap_2,
+            topk_runs=[current_k],
+        )
+
+        state.debug["stability_mode"] = "adaptive_rankings"
+        state.debug["stability_topk_runs"] = [current_k]
+        state.debug["stability_overlap_1"] = overlap_1
+        state.debug["stability_overlap_2"] = overlap_2
+        return state
+
     base_k = (
         state.recommended_topk
     )

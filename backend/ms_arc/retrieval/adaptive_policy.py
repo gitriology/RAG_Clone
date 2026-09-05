@@ -1,8 +1,8 @@
-"""Cost-aware retrieval policy scaffold for MS-ARC (Optimization #26).
+"""Cost-aware adaptive retrieval policy for MS-ARC (Optimizations #26/#28).
 
-This module makes the adaptive architecture explicit without changing the
-production retrieval loop yet. Optimization #28 will activate the iterative
-retrieve -> evaluate -> retrieve-more loop using this policy.
+The policy defines the initial retrieval depth, controlled +step expansion,
+confidence/convergence stopping rules, and complexity-aware retrieval ceiling.
+Optimization #28 uses this policy to execute the iterative retrieval loop.
 """
 
 from __future__ import annotations
@@ -20,11 +20,7 @@ class AdaptiveRetrievalPlan:
 
 
 class AdaptiveRetrievalPolicy:
-    """Build a deterministic retrieval plan from query complexity.
-
-    #26 separates policy from execution. That keeps the controller testable
-    and lets #28 add iterative retrieval without rewriting the rest of MS-ARC.
-    """
+    """Build a deterministic adaptive retrieval plan from query complexity."""
 
     def __init__(
         self,
@@ -55,8 +51,19 @@ class AdaptiveRetrievalPolicy:
         complexity = self._clamp(float(query_complexity))
         requested = max(1, int(recommended_topk))
 
-        complexity_ceiling = self.initial_k + round(complexity * (self.max_k - self.initial_k))
-        target_max = max(self.initial_k, requested, complexity_ceiling)
+        complexity_ceiling = self.initial_k + round(
+            complexity * (self.max_k - self.initial_k)
+        )
+        target_max = max(
+            self.initial_k + self.expansion_step,
+            requested,
+            complexity_ceiling,
+        )
+
+        # Keep every expansion on the configured +step schedule.
+        # For the default policy this produces 5 -> 10 -> 15 -> 20.
+        steps = (target_max - self.initial_k + self.expansion_step - 1) // self.expansion_step
+        target_max = self.initial_k + steps * self.expansion_step
         target_max = min(self.max_k, target_max)
 
         return AdaptiveRetrievalPlan(
@@ -74,7 +81,7 @@ class AdaptiveRetrievalPolicy:
         current_k: int | None = None,
         plan: AdaptiveRetrievalPlan | None = None,
     ) -> bool:
-        """Cheap sufficiency/convergence gate for the future iterative loop."""
+        """Return whether the current retrieval depth is sufficient."""
         if confidence >= self.confidence_threshold:
             return True
         if previous_confidence is not None:

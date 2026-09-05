@@ -91,7 +91,7 @@ def run_msarc(
     )
 
     # ======================================================
-    # Optimization #26 — adaptive retrieval policy scaffold
+    # Optimization #26 / #28 — adaptive retrieval plan
     # ======================================================
 
     policy = AdaptiveRetrievalPolicy()
@@ -107,43 +107,93 @@ def run_msarc(
         "convergence_epsilon": plan.convergence_epsilon,
     }
 
-    # Retrieval execution remains unchanged here. Optimization #28 will
-    # consume this plan to activate iterative retrieve/evaluate/expand/stop.
-
     # ======================================================
-    # Retrieval
+    # Optimization #28 — genuine iterative controller
     # ======================================================
 
-    state = retrieve(
+    current_k = plan.initial_k
+    previous_confidence = None
+    iteration = 0
+    adaptive_rankings = []
+    iteration_history = []
 
-        state,
+    while True:
+        iteration += 1
 
-        fusion_method=fusion_method,
+        state = retrieve(
+            state,
+            fusion_method=fusion_method,
+            retrieval_k=current_k,
+        )
 
-    )
+        current_ids = [
+            str(doc.doc_id)
+            for doc in state.merged_results
+        ]
+        adaptive_rankings.append(current_ids)
+        state.debug["adaptive_rankings"] = adaptive_rankings
 
-    # ======================================================
-    # Phase 8 — Retrieval Signals
-    # ======================================================
+        state = compute_agreement(state)
+        state = compute_margin(state)
+        state = compute_stability(state)
+        state = compute_decision(state)
 
-    state = compute_agreement(
-        state
-    )
+        confidence = float(state.retrieval_confidence)
+        reached_max = current_k >= plan.max_k
+        sufficient = policy.should_stop(
+            confidence=confidence,
+            previous_confidence=previous_confidence,
+            current_k=current_k,
+            plan=plan,
+        )
 
-    state = compute_margin(
-        state
-    )
+        if reached_max:
+            stop_reason = "max_k_reached"
+        elif confidence >= plan.confidence_threshold:
+            stop_reason = "confidence_threshold"
+        elif previous_confidence is not None and (
+            confidence - previous_confidence
+        ) <= plan.convergence_epsilon:
+            stop_reason = "confidence_converged"
+        else:
+            stop_reason = "expand"
 
-    state = compute_stability(
-        state
-    )
+        iteration_history.append({
+            "iteration": iteration,
+            "retrieval_k": current_k,
+            "documents": len(state.merged_results),
+            "confidence": confidence,
+            "agreement": float(state.signals.agreement.score),
+            "margin": float(state.signals.margin.normalized_margin),
+            "stability": float(state.signals.stability.score),
+            "decision": state.decision,
+            "stop": bool(sufficient),
+            "stop_reason": stop_reason,
+        })
 
-    # ======================================================
-    # Phase 9 — Decision
-    # ======================================================
+        print(
+            f"[Optimization #28] Iteration {iteration}: "
+            f"K={current_k}, confidence={confidence:.4f}, "
+            f"decision={state.decision}, action={stop_reason}"
+        )
 
-    state = compute_decision(
-        state
-    )
+        if sufficient:
+            break
+
+        next_k = min(
+            current_k + plan.expansion_step,
+            plan.max_k,
+        )
+        if next_k <= current_k:
+            break
+
+        previous_confidence = confidence
+        current_k = next_k
+
+    state.debug["adaptive_iterations"] = iteration_history
+    state.debug["adaptive_final_k"] = current_k
+    state.debug["adaptive_iterations_count"] = iteration
+    state.debug["adaptive_stop_reason"] = iteration_history[-1]["stop_reason"]
+    state.debug["adaptive_documents_considered"] = len(state.merged_results)
 
     return state
