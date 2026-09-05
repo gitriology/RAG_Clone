@@ -15,6 +15,24 @@ DEFAULT_BATCH_SIZE = 32
 
 
 # ==========================================================
+# EMBEDDING DIMENSION
+# ==========================================================
+
+def get_embedding_dimension() -> int:
+    """Return the embedding dimension exposed by the shared model."""
+
+    model = ModelRegistry.get_embedding_model()
+    dimension = model.get_sentence_embedding_dimension()
+
+    if dimension is None:
+        raise RuntimeError(
+            "Embedding model did not expose an embedding dimension."
+        )
+
+    return int(dimension)
+
+
+# ==========================================================
 # DOCUMENT EMBEDDINGS
 # ==========================================================
 

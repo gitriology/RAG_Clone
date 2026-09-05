@@ -15,15 +15,53 @@ MS-ARC, stability analysis and final reranking are handled
 outside this module.
 """
 
+import copy
+import hashlib
+from collections import OrderedDict
+
 import numpy as np
 import re
 
 from backend.retrieval.dense.embedder import encode_query
+from backend.retrieval.lexical.bm25 import tokenize
 from backend.retrieval.query_matching import (
     analyze_query,
     lexical_match_score,
     reference_present,
 )
+
+
+# ==========================================================
+# QUERY RESULT CACHE
+# ==========================================================
+
+_CACHE_MAX_SIZE = 128
+_QUERY_CACHE = OrderedDict()
+
+
+def _cache_key(query, faiss_index, bm25, texts, k, candidate_k, dense_weight, sparse_weight, fusion_method, rrf_k):
+    """Create a cache key that invalidates when the corpus/index changes."""
+    digest = hashlib.sha256()
+    digest.update(str(len(texts)).encode("utf-8"))
+    for text in texts:
+        encoded = str(text).encode("utf-8", errors="replace")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    return (
+        str(query), id(faiss_index), id(bm25), digest.hexdigest(),
+        int(k), int(candidate_k), float(dense_weight), float(sparse_weight),
+        str(fusion_method), int(rrf_k),
+    )
+
+
+def clear_query_cache():
+    """Clear the process-local hybrid retrieval cache."""
+    _QUERY_CACHE.clear()
+
+
+def query_cache_info():
+    """Return cache size diagnostics."""
+    return {"size": len(_QUERY_CACHE), "max_size": _CACHE_MAX_SIZE}
 
 
 # ==========================================================
@@ -217,6 +255,16 @@ def hybrid_search(
         int(k),
     )
 
+    cache_key = _cache_key(
+        query, faiss_index, bm25, texts, k, candidate_k,
+        dense_weight, sparse_weight, fusion_method, rrf_k,
+    )
+    cached = _QUERY_CACHE.get(cache_key)
+    if cached is not None:
+        _QUERY_CACHE.move_to_end(cache_key)
+        print("[Hybrid Retrieval] Query cache: HIT")
+        return copy.deepcopy(cached)
+
     print(
         f"[Hybrid Retrieval] "
         f"Executing hybrid search: "
@@ -331,7 +379,7 @@ def hybrid_search(
     # SPARSE RETRIEVAL
     # ======================================================
 
-    bm25_tokens = query.lower().split()
+    bm25_tokens = tokenize(query)
 
     print(
         f"[Hybrid Retrieval] "
@@ -682,7 +730,7 @@ def hybrid_search(
     # RETURN
     # ======================================================
 
-    return {
+    result = {
 
         "dense_results":
             dense_results,
@@ -700,3 +748,10 @@ def hybrid_search(
             candidate_k,
 
     }
+
+    _QUERY_CACHE[cache_key] = copy.deepcopy(result)
+    _QUERY_CACHE.move_to_end(cache_key)
+    while len(_QUERY_CACHE) > _CACHE_MAX_SIZE:
+        _QUERY_CACHE.popitem(last=False)
+    print("[Hybrid Retrieval] Query cache: STORE")
+    return result

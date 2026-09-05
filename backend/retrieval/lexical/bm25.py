@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import os
 import pickle
+import re
 import tempfile
 from pathlib import Path
 from typing import Iterable, List, Sequence, Tuple
@@ -66,20 +67,19 @@ def tokenize(text: str) -> List[str]:
 
         lowercase
         ->
-        whitespace tokenization
+        punctuation-aware word tokenization
 
     This function is intentionally shared by both document
-    indexing and query processing.
-
-    More advanced punctuation handling can be introduced
-    later as a separate optimization/ablation without
-    changing the cache mechanism.
+    indexing and query processing, so the same normalization
+    policy is used on both sides.
     """
 
     if text is None:
         return []
 
-    return str(text).lower().split()
+    # Shared, deterministic normalization for both documents and queries:
+    # lowercase and split punctuation without losing Unicode word tokens.
+    return re.findall(r"\b\w+\b", str(text).lower(), flags=re.UNICODE)
 
 
 # ==========================================================
