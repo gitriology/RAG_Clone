@@ -14,6 +14,10 @@ from backend.ms_arc.retrieval.retrieve import (
     retrieve,
 )
 
+from backend.ms_arc.retrieval.adaptive_policy import (
+    AdaptiveRetrievalPolicy,
+)
+
 from backend.ms_arc.agreement.agreement import (
     compute_agreement,
 )
@@ -85,6 +89,26 @@ def run_msarc(
     state = analyzer.analyze(
         state
     )
+
+    # ======================================================
+    # Optimization #26 — adaptive retrieval policy scaffold
+    # ======================================================
+
+    policy = AdaptiveRetrievalPolicy()
+    plan = policy.plan(
+        query_complexity=state.query_complexity,
+        recommended_topk=state.recommended_topk,
+    )
+    state.debug["adaptive_plan"] = {
+        "initial_k": plan.initial_k,
+        "expansion_step": plan.expansion_step,
+        "max_k": plan.max_k,
+        "confidence_threshold": plan.confidence_threshold,
+        "convergence_epsilon": plan.convergence_epsilon,
+    }
+
+    # Retrieval execution remains unchanged here. Optimization #28 will
+    # consume this plan to activate iterative retrieve/evaluate/expand/stop.
 
     # ======================================================
     # Retrieval
