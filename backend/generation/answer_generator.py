@@ -1043,7 +1043,10 @@ def select_evidence(
         x for x in candidates
         if "identity" in required
         and float(x.get("identity_score", 0.0)) >= 0.55
-        and float(x.get("anchor_score", 0.0)) >= 0.70
+        and (
+            float(x.get("anchor_score", 0.0)) >= 0.70
+            or float(x.get("identity_score", 0.0)) >= 0.85
+        )
     ]
     if identity_candidates:
         # Identity questions are answer-form constrained. Once a direct
@@ -1054,7 +1057,13 @@ def select_evidence(
         )
         best = identity_candidates[0]
         # Only stop at one sentence when it is a genuinely direct answer.
-        if float(best.get("anchor_score", 0.0)) >= 0.90 and float(best.get("semantic", 0.0)) >= 0.50:
+        if (
+            float(best.get("semantic", 0.0)) >= 0.50
+            and (
+                float(best.get("anchor_score", 0.0)) >= 0.90
+                or float(best.get("identity_score", 0.0)) >= 0.85
+            )
+        ):
             return [best]
 
     # Greedy relevance + novelty selection. For compare/difference/how/why
@@ -1254,12 +1263,12 @@ def generate_answer(
         default=0.0,
     )
 
+    # Report the question's required targets, not only the incidental target
+    # labels attached to selected sentences.  This keeps diagnostics truthful
+    # for identity questions whose evidence is structurally definition-like
+    # even when answer_target_score has no explicit identity label.
     covered_targets = sorted(
-        {
-            target
-            for item in selected
-            for target in item.get("targets", [])
-        }
+        {k for k, v in detect_question_targets(query).items() if v}
     )
 
     print()

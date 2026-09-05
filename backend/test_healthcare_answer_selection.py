@@ -107,3 +107,36 @@ def test_identity_selection_prefers_definition_over_topic_sentence():
     selected = select_evidence(query, scored, 3)
     assert len(selected) == 1
     assert selected[0]["text"].startswith("Vaccination is the action")
+
+
+def test_risk_definition_is_strong_identity_evidence_without_query_phrase_in_sentence():
+    query = "What is risk perception?"
+    scored = [
+        {
+            "text": "Risk is the possibility of a negative future outcome.",
+            "identity_score": 0.97,
+            "anchor_score": 0.0,
+            "evidence_score": 0.70,
+            "semantic": 0.67,
+            "lexical": 0.0,
+            "target_score": 0.0,
+            "quality": 1.0,
+            "contamination": 0.0,
+            "targets": [],
+        },
+        {
+            "text": "In other words, risk perception is not only shaped by factual circumstances.",
+            "identity_score": 0.0,
+            "anchor_score": 1.0,
+            "evidence_score": 0.72,
+            "semantic": 0.76,
+            "lexical": 0.5,
+            "target_score": 0.0,
+            "quality": 1.0,
+            "contamination": 0.0,
+            "targets": [],
+        },
+    ]
+    selected = select_evidence(query, scored, 3)
+    assert len(selected) == 1
+    assert selected[0]["text"].startswith("Risk is the possibility")

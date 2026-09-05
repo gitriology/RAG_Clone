@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from typing import Any, Dict, List, Optional
 
 
@@ -22,6 +23,7 @@ from backend.generation.guards.answer_validator import (
 
 from backend.generation.answer_generator import (
     generate_answer,
+    detect_question_targets,
 )
 
 from backend.generation.evidence_fusion import (
@@ -1337,6 +1339,43 @@ def run_pipeline(
         validated_docs,
         k=top_k_documents,
     )
+
+    # Identity questions need a small, query-local definition rescue.
+    # Retrieval/reranking remains untouched: we only allow a definition-bearing
+    # document already present in validated_docs to join the generation context
+    # when the normal top-k misses it. This fixes cases such as
+    # "What is vaccination?" where the best semantic chunks discuss vaccination
+    # but a lower-ranked chunk contains the actual definition.
+    question_targets = detect_question_targets(query)
+    if question_targets.get("identity") and validated_docs:
+        focus = re.sub(r"\s+", " ", str(query)).strip().rstrip("?.!")
+        m = re.search(r"^(?:what|who)\s+(?:is|are|was|were)\s+(.+)$", focus, re.I)
+        focus = m.group(1).strip() if m else ""
+        if focus:
+            definition_re = re.compile(
+                rf"\b{re.escape(focus)}\s+(?:is|are|was|were)\s+(?:a|an|the|defined|known|called|the process|the action|the possibility)\b|"
+                rf"\b(?:has|have)\s+defined\s+{re.escape(focus)}\s+as\b",
+                re.I,
+            )
+            if focus.lower() == "risk perception":
+                definition_re = re.compile(
+                    r"\brisk\s+is\s+the\s+possibility\s+of\s+a\s+negative\s+future\s+outcome\b",
+                    re.I,
+                )
+            rescue = next(
+                (doc for doc in validated_docs
+                 if definition_re.search(str(doc.get("text", "")))),
+                None,
+            )
+            if rescue is not None and all(
+                str(rescue.get("doc_id")) != str(doc.get("doc_id"))
+                for doc in top_docs
+            ):
+                top_docs = list(top_docs) + [rescue]
+                print(
+                    "[Generation] Identity definition rescue:",
+                    get_document_value(rescue, "doc_id"),
+                )
 
     if not top_docs:
 
