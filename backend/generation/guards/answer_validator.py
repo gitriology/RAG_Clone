@@ -1,3 +1,14 @@
+"""Answer validation for the production extractive RAG pipeline.
+
+Validation must answer a different question from semantic similarity:
+
+    Does the selected evidence actually answer the user's query?
+
+An answer agreeing with itself is not evidence of correctness.  Therefore
+this validator combines semantic answer/evidence agreement with independent
+query-to-evidence answerability checks from ``query_matching``.
+"""
+
 from __future__ import annotations
 
 from typing import Iterable, Optional
@@ -5,7 +16,15 @@ from typing import Iterable, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 
 from backend.models.model_registry import ModelRegistry
-from backend.retrieval.query_matching import assess_answerability, evidence_support_score
+from backend.retrieval.query_matching import assess_answerability
+
+
+def _clamp(value, low=0.0, high=1.0):
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return low
+    return max(low, min(high, value))
 
 
 def validate_answer(
@@ -15,20 +34,25 @@ def validate_answer(
     evidence: Optional[Iterable] = None,
     query: str = "",
 ):
-    """
-    Validate the final answer against the evidence that actually supports it.
+    """Validate an answer against selected evidence and the original query.
 
-    Previously validation compared the answer with every retrieved document.
-    That allowed an irrelevant document to lower or distort the score.
+    ``evidence`` is authoritative.  We intentionally do not fall back to
+    arbitrary retrieved documents when selected evidence is empty because
+    that can turn an unsupported answer into a seemingly valid one.
 
-    `evidence` is preferred. It should contain the selected evidence strings or
-    dictionaries with a `text` field. Documents remain a safe fallback.
+    Backward compatibility:
+    - ``query`` is optional.
+    - existing callers that only rely on semantic validation still receive
+      ``confidence`` and ``answer_agreement``.
     """
-    if not answer:
+    if not answer or not str(answer).strip():
         return {
             "is_valid": False,
             "confidence": 0.0,
+            "answer_agreement": 0.0,
             "validation_scope": "empty_answer",
+            "answerable": False,
+            "query_grounding": 0.0,
         }
 
     candidates = []
@@ -44,16 +68,19 @@ def validate_answer(
 
     scope = "selected_evidence"
 
+    # Do NOT use arbitrary retrieved documents as a validation fallback.
     if not candidates:
-        # Do not validate an answer against arbitrary retrieved documents.
-        # Retrieval relevance is not evidence that the answer is supported.
         return {
             "is_valid": False,
             "confidence": 0.0,
             "answer_agreement": 0.0,
+            "validation_scope": scope,
+            "candidate_count": 0,
+            "answerable": False,
             "query_grounding": 0.0,
-            "answerability": {"answerable": False, "score": 0.0, "reason": "no_selected_evidence"},
-            "validation_scope": "no_selected_evidence",
+            "answerability_reason": "no_selected_evidence",
+            "matched_focus": [],
+            "missing_focus": [],
         }
 
     model = ModelRegistry.get_validation_model()
@@ -76,34 +103,70 @@ def validate_answer(
 
     best = float(max(scores)) if len(scores) else 0.0
 
+    # Independent query -> evidence assessment.  This is the important
+    # anti-self-validation signal.
+    if query and str(query).strip():
+        answerability = assess_answerability(
+            str(query),
+            candidates,
+            answer=str(answer),
+        )
+        query_grounding = _clamp(answerability.get("score", 0.0))
+        answerable = bool(answerability.get("answerable", False))
+    else:
+        # Legacy callers have no query. Preserve the previous semantic-only
+        # behavior rather than unexpectedly invalidating their answers.
+        answerability = {
+            "answerable": best >= float(threshold),
+            "score": best,
+            "reason": "query_not_provided_legacy_mode",
+            "matched_focus": [],
+            "missing_focus": [],
+        }
+        query_grounding = best
+        answerable = best >= float(threshold)
+
+    # Semantic agreement is necessary but insufficient.  A selected sentence
+    # that repeats the answer can score 1.0 even when it does not answer the
+    # question. Query grounding is therefore an independent gate.
+    semantic_ok = best >= float(threshold)
+
+    if query and str(query).strip():
+        is_valid = semantic_ok and answerable and query_grounding >= 0.52
+    else:
+        is_valid = semantic_ok
+
     print("[Answer Validation] Model ID:", id(model))
     print("[Answer Validation] Scope:", scope)
     print("[Answer Validation] Candidates:", len(candidates))
     print("[Answer Validation] Best semantic agreement:", f"{best:.4f}")
 
-    grounding = assess_answerability(query, candidates, answer=answer) if query else {
-        "answerable": True,
-        "score": 1.0,
-        "reason": "query_not_supplied",
-    }
-    query_grounding = float(grounding.get("score", 0.0))
-
-    # Agreement alone is insufficient because the answer is extractive from
-    # these same sentences. Require independent query-to-evidence grounding.
-    is_valid = (
-        best >= float(threshold)
-        and bool(grounding.get("answerable", False))
-    )
-
-    validation_confidence = min(best, query_grounding)
+    if query and str(query).strip():
+        print(
+            "[Answer Validation] Query grounding:",
+            f"{query_grounding:.4f}",
+        )
+        print(
+            "[Answer Validation] Answerable:",
+            answerable,
+        )
+        print(
+            "[Answer Validation] Reason:",
+            answerability.get("reason", ""),
+        )
 
     return {
-        "is_valid": is_valid,
-        "confidence": validation_confidence,
+        "is_valid": bool(is_valid),
+        # Backwards-compatible semantic agreement field.
+        "confidence": best,
         "answer_agreement": best,
-        "query_grounding": query_grounding,
-        "answerability": grounding,
         "validation_scope": scope,
         "candidate_count": len(candidates),
         "threshold": float(threshold),
+        "answerable": bool(answerable),
+        "query_grounding": query_grounding,
+        "answerability_reason": answerability.get("reason", ""),
+        "matched_focus": list(answerability.get("matched_focus", [])),
+        "missing_focus": list(answerability.get("missing_focus", [])),
+        "answerability_score": _clamp(answerability.get("score", 0.0)),
     }

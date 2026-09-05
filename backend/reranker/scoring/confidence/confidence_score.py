@@ -21,7 +21,7 @@ import math
 from typing import Any, Dict, Iterable, List, Optional
 
 
-CALIBRATION_VERSION = "evidence_aware_v3"
+CALIBRATION_VERSION = "evidence_aware_v4_answerability"
 
 
 def _clamp(value: Any, low: float = 0.0, high: float = 1.0) -> float:
@@ -123,6 +123,24 @@ def _answer_agreement(validation: Dict[str, Any]) -> float:
     probability.
     """
     return _clamp(validation.get("confidence", 0.0))
+
+
+def _query_grounding(validation: Dict[str, Any]) -> float:
+    """Independent query -> selected-evidence grounding signal.
+
+    Backward compatible with older validation dictionaries that did not expose
+    query grounding: a valid legacy result is treated as fully grounded.
+    """
+    if "query_grounding" in validation:
+        return _clamp(validation.get("query_grounding", 0.0))
+    return 1.0 if bool(validation.get("is_valid", False)) else 0.0
+
+
+def _answerable(validation: Dict[str, Any]) -> bool:
+    """Read answerability without breaking legacy validation callers."""
+    if "answerable" in validation:
+        return bool(validation.get("answerable", False))
+    return bool(validation.get("is_valid", False))
 
 
 def _selected_evidence_stats(
@@ -244,9 +262,8 @@ def compute_confidence(
     ranking = _ranking_confidence(documents)
     context = _context_confidence(documents)
     answer_agreement = _answer_agreement(validation)
-    query_grounding = _clamp(validation.get("query_grounding", 1.0 if validation.get("is_valid", False) else 0.0))
-    answerability_payload = validation.get("answerability", {})
-    answerable = bool(answerability_payload.get("answerable", validation.get("is_valid", False)))
+    query_grounding = _query_grounding(validation)
+    answerable = _answerable(validation)
 
     evidence_stats = _selected_evidence_stats(evidence)
     evidence_count = evidence_stats["count"]
@@ -275,12 +292,12 @@ def compute_confidence(
         0.12 * retrieval
         + 0.08 * ranking
         + 0.08 * context
-        + 0.14 * answer_agreement
-        + 0.16 * query_grounding
-        + 0.20 * relevance
-        + 0.09 * semantic
+        + 0.12 * answer_agreement
+        + 0.18 * query_grounding
+        + 0.22 * relevance
+        + 0.10 * semantic
         + 0.06 * quality
-        + 0.05 * target_support
+        + 0.06 * target_support
         + 0.08 * source_consistency
     )
 
@@ -298,8 +315,13 @@ def compute_confidence(
     if not is_valid:
         raw *= 0.55
 
+    # Independent answerability is a hard production safety signal.
+    # Semantic agreement alone must never create high confidence.
     if not answerable:
-        raw *= 0.55
+        raw *= 0.50
+
+    if query_grounding < 0.52:
+        raw *= 0.65
 
     if evidence_count > 0 and target_support >= 0.5 and relevance >= 0.75:
         raw += 0.03
@@ -312,10 +334,11 @@ def compute_confidence(
 
     if not is_valid:
         calibrated = min(calibrated, 0.40)
+
     if not answerable:
         calibrated = min(calibrated, 0.25)
-    elif query_grounding < 0.48:
-        calibrated = min(calibrated, 0.45)
+    elif query_grounding < 0.52:
+        calibrated = min(calibrated, 0.35)
 
     calibrated = _clamp(calibrated)
 
@@ -344,6 +367,8 @@ def compute_confidence(
         },
         "selected_evidence_count": int(evidence_count),
         "answer_valid": is_valid,
+        "answerable": answerable,
+        "query_grounding": query_grounding,
     }
 
     print("\n" + "=" * 60)
@@ -353,6 +378,8 @@ def compute_confidence(
     print(f"Ranking Concentration    : {ranking:.4f}")
     print(f"Context Support          : {context:.4f}")
     print(f"Answer Agreement        : {answer_agreement:.4f}")
+    print(f"Query Grounding         : {query_grounding:.4f}")
+    print(f"Answerable              : {answerable}")
     print(f"Evidence Relevance       : {relevance:.4f}")
     print(f"Evidence Semantic        : {semantic:.4f}")
     print(f"Evidence Quality         : {quality:.4f}")
@@ -390,9 +417,8 @@ def build_confidence_breakdown(
     ranking = _ranking_confidence(documents)
     context = _context_confidence(documents)
     answer_agreement = _answer_agreement(validation)
-    query_grounding = _clamp(validation.get("query_grounding", 1.0 if validation.get("is_valid", False) else 0.0))
-    answerability_payload = validation.get("answerability", {})
-    answerable = bool(answerability_payload.get("answerable", validation.get("is_valid", False)))
+    query_grounding = _query_grounding(validation)
+    answerable = _answerable(validation)
 
     relevance = evidence_stats["relevance"] if evidence_stats["count"] else 0.0
     semantic = evidence_stats["semantic"] if evidence_stats["count"] else 0.0
@@ -405,12 +431,12 @@ def build_confidence_breakdown(
         0.12 * retrieval
         + 0.08 * ranking
         + 0.08 * context
-        + 0.14 * answer_agreement
-        + 0.16 * query_grounding
-        + 0.20 * relevance
-        + 0.09 * semantic
+        + 0.12 * answer_agreement
+        + 0.18 * query_grounding
+        + 0.22 * relevance
+        + 0.10 * semantic
         + 0.06 * quality
-        + 0.05 * target_support
+        + 0.06 * target_support
         + 0.08 * source_consistency
     )
     raw -= 0.16 * contamination
@@ -420,7 +446,9 @@ def build_confidence_breakdown(
     if not bool(validation.get("is_valid", False)):
         raw *= 0.55
     if not answerable:
-        raw *= 0.55
+        raw *= 0.50
+    if query_grounding < 0.52:
+        raw *= 0.65
     if evidence_stats["count"] > 0 and target_support >= 0.5 and relevance >= 0.75:
         raw += 0.03
 
@@ -432,8 +460,8 @@ def build_confidence_breakdown(
         calibrated = min(calibrated, 0.40)
     if not answerable:
         calibrated = min(calibrated, 0.25)
-    elif query_grounding < 0.48:
-        calibrated = min(calibrated, 0.45)
+    elif query_grounding < 0.52:
+        calibrated = min(calibrated, 0.35)
 
     return {
         "method": CALIBRATION_VERSION,
@@ -456,4 +484,6 @@ def build_confidence_breakdown(
         },
         "selected_evidence_count": int(evidence_stats["count"]),
         "answer_valid": bool(validation.get("is_valid", False)),
+        "answerable": answerable,
+        "query_grounding": query_grounding,
     }

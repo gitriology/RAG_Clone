@@ -1389,11 +1389,9 @@ def run_pipeline(
     # QUESTION-AWARE GENERATION
     # ======================================================
 
-    # Answer selection sees the full validated/reranked candidate pool.
-    # Presentation/state still use the configured top-k documents.
     generation = generate_answer(
         query=query,
-        documents=validated_docs,
+        documents=top_docs,
         max_sentences=max_sentences,
     )
 
@@ -1780,7 +1778,7 @@ def run_pipeline(
 
         "query": query,
 
-        "pipeline_version": "answer-selection-production-v2",
+        "pipeline_version": "confidence-calibration-v3",
 
         # ==================================================
         # Ranking
@@ -1818,10 +1816,6 @@ def run_pipeline(
 
         "answer_valid": answer_valid,
 
-        "answerable": bool(validation.get("answerability", {}).get("answerable", False)),
-        "query_grounding": safe_float(validation.get("query_grounding", 0.0)),
-        "answerability_score": safe_float(validation.get("answerability", {}).get("score", 0.0)),
-
         "confidence_calibration": {
             **confidence_breakdown,
             "version": CALIBRATION_VERSION,
@@ -1831,6 +1825,9 @@ def run_pipeline(
                 "unknown",
             ),
             "answer_validation_confidence": answer_confidence,
+            "answerable": bool(validation.get("answerable", answer_valid)),
+            "query_grounding": safe_float(validation.get("query_grounding", 0.0)),
+            "answerability_reason": validation.get("answerability_reason", ""),
             "answer_agreement": answer_confidence,
             "selected_evidence_count": len(
                 selected_evidence
