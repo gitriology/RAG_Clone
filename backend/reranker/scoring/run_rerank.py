@@ -1002,7 +1002,7 @@ def run_pipeline(
         return []
 
     # ======================================================
-    # OPTIMIZATION #4
+    # OPTIMIZATION #29
     # VERIFY MS-ARC SCORES
     # ======================================================
 
@@ -1026,8 +1026,8 @@ def run_pipeline(
 
     print()
     print(
-        "[Optimization #4] "
-        "MS-ARC rerank scores available."
+        "[Optimization #29] "
+        "MS-ARC canonical rerank scores available."
     )
 
     # ======================================================
