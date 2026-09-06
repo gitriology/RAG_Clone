@@ -575,6 +575,63 @@ def load_pdf_pages(
 
 
 # ==========================================================
+# FAST TEXT EXTRACTION
+# ==========================================================
+
+def load_pdf_text(
+    file_path: str | Path,
+) -> str:
+    """
+    Fast plain-text PDF extraction path.
+
+    This path is intentionally separate from ``load_pdf_pages``:
+    callers that only need a backward-compatible text string do not
+    need to materialize block coordinates, layout metadata, or the
+    serialized block list for every page. Page text is accumulated in
+    a list and joined once, avoiding repeated string concatenation.
+
+    The research/data-pipeline path should continue to use
+    ``load_pdf(..., return_pages=True)`` so page/block provenance is
+    preserved.
+    """
+
+    file_path = Path(file_path)
+
+    if not file_path.exists():
+        raise FileNotFoundError(
+            f"PDF not found: {file_path}"
+        )
+
+    if not file_path.is_file():
+        raise ValueError(
+            f"PDF path is not a file: {file_path}"
+        )
+
+    text_parts: List[str] = []
+
+    document = fitz.open(str(file_path))
+
+    try:
+        if document.needs_pass:
+            raise RuntimeError(
+                f"PDF is password protected: {file_path}"
+            )
+
+        for page in document:
+            text = _normalize_block_text(
+                page.get_text("text")
+            )
+
+            if text:
+                text_parts.append(text)
+
+    finally:
+        document.close()
+
+    return "\n\n".join(text_parts).strip()
+
+
+# ==========================================================
 # BACKWARD COMPATIBLE LOADER
 # ==========================================================
 
@@ -592,9 +649,7 @@ def load_pdf(
         -> list of page dictionaries
     """
 
-    pages = load_pdf_pages(
-        file_path
-    )
+    pages = load_pdf_pages(file_path)
 
     if return_pages:
         return pages

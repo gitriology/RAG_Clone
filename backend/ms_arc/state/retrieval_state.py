@@ -98,9 +98,14 @@ class RetrievalState:
     decision: str = ""
 
     # Retrieval-stage EvidenceState snapshot used by Optimization #36.
-    # The complete EvidenceState is still constructed downstream after the
-    # final graph/evidence stage.
     evidence_state: Any = None
+
+    # Optimization #37: demand-driven full EvidenceState/Graph snapshots
+    # created inside the adaptive controller when retrieval remains ambiguous.
+    # These are reused by the downstream production pipeline on the final
+    # iteration, avoiding a second graph/state construction.
+    evidence_graph_state: Any = None
+    controller_evidence_state: Any = None
 
     # ======================================================
     # DEBUG INFORMATION

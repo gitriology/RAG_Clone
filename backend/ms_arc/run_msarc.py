@@ -34,6 +34,14 @@ from backend.ms_arc.decision.decision_engine import (
     compute_decision,
 )
 
+from backend.evidence_graph.graph_builder import (
+    build_graph,
+)
+
+from backend.evidence_state.build_evidence_state import (
+    build_evidence_state,
+)
+
 from backend.evidence_state.incremental import (
     update_incremental_evidence_state,
     evidence_state_sufficient,
@@ -131,6 +139,12 @@ def run_msarc(
             retrieval_k=current_k,
         )
 
+        # Any controller graph/state snapshot belongs to the current retrieval
+        # depth only. Clear prior-iteration snapshots before evaluating this
+        # new evidence set so downstream reuse can never return stale state.
+        state.evidence_graph_state = None
+        state.controller_evidence_state = None
+
         current_ids = [
             str(doc.doc_id)
             for doc in state.merged_results
@@ -168,10 +182,41 @@ def run_msarc(
             evidence_score=evidence_score,
         ) or evidence_sufficient
 
+        # Optimization #37: integrate the complete Evidence State into the
+        # adaptive feedback loop only when the cheap retrieval-stage state is
+        # still ambiguous. This preserves #36's low-cost early exit while
+        # making the full EvidenceState an actual retrieval-control signal.
+        full_evidence_score = None
+        full_evidence_sufficient = False
+        if not sufficient:
+            controller_graph_state = build_graph(
+                state,
+                analytics_mode="lazy",
+            )
+            controller_evidence_state = build_evidence_state(
+                state,
+                controller_graph_state,
+            )
+            state.evidence_graph_state = controller_graph_state
+            state.controller_evidence_state = controller_evidence_state
+            full_evidence_score = float(
+                controller_evidence_state.evidence_score
+            )
+            full_evidence_sufficient = evidence_state_sufficient(
+                controller_evidence_state,
+                threshold=plan.confidence_threshold,
+            )
+            state.debug["controller_evidence_score"] = full_evidence_score
+            state.debug["controller_evidence_sufficient"] = full_evidence_sufficient
+            state.debug["controller_evidence_state_integrated"] = True
+            sufficient = sufficient or full_evidence_sufficient
+
         if reached_max:
             stop_reason = "max_k_reached"
         elif confidence >= plan.confidence_threshold:
             stop_reason = "confidence_threshold"
+        elif full_evidence_sufficient:
+            stop_reason = "full_evidence_state_sufficient"
         elif evidence_sufficient:
             stop_reason = "evidence_state_sufficient"
         elif previous_confidence is not None and (
@@ -188,6 +233,8 @@ def run_msarc(
             "confidence": confidence,
             "evidence_score": evidence_score,
             "evidence_state_sufficient": evidence_sufficient,
+            "controller_evidence_score": full_evidence_score,
+            "controller_evidence_state_sufficient": full_evidence_sufficient,
             "agreement": float(state.signals.agreement.score),
             "margin": float(state.signals.margin.normalized_margin),
             "stability": float(state.signals.stability.score),

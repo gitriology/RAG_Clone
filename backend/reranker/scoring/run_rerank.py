@@ -1052,9 +1052,19 @@ def run_pipeline(
     #
     # Existing MS-ARC RetrievalState is reused.
 
-    graph_state = build_graph(
-        retrieval_state
+    graph_state = getattr(
+        retrieval_state,
+        "evidence_graph_state",
+        None,
     )
+    if graph_state is None:
+        graph_state = build_graph(
+            retrieval_state
+        )
+    else:
+        print(
+            "[Optimization #37] Reusing Evidence Graph produced by MS-ARC."
+        )
 
     if graph_state is None:
 
@@ -1134,10 +1144,20 @@ def run_pipeline(
     # the builder to execute a second time.
     # ------------------------------------------------------
 
-    evidence_state = build_evidence_state(
+    evidence_state = getattr(
         retrieval_state,
-        graph_state,
+        "controller_evidence_state",
+        None,
     )
+    if evidence_state is None:
+        evidence_state = build_evidence_state(
+            retrieval_state,
+            graph_state,
+        )
+    else:
+        print(
+            "[Optimization #37] Reusing full Evidence State produced by MS-ARC."
+        )
 
     if evidence_state is None:
 
