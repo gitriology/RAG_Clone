@@ -34,6 +34,11 @@ from backend.ms_arc.decision.decision_engine import (
     compute_decision,
 )
 
+from backend.evidence_state.incremental import (
+    update_incremental_evidence_state,
+    evidence_state_sufficient,
+)
+
 
 def run_msarc(
     query: str,
@@ -138,6 +143,21 @@ def run_msarc(
         state = compute_stability(state)
         state = compute_decision(state)
 
+        # Optimization #36: update only the cheap retrieval-stage EvidenceState
+        # after this iteration. The expensive full EvidenceState remains a
+        # downstream final-stage operation.
+        state.evidence_state = update_incremental_evidence_state(
+            state,
+            state.evidence_state,
+        )
+        evidence_score = float(state.evidence_state.evidence_score)
+        evidence_sufficient = evidence_state_sufficient(
+            state.evidence_state,
+            threshold=plan.confidence_threshold,
+        )
+        state.debug["incremental_evidence_score"] = evidence_score
+        state.debug["incremental_evidence_sufficient"] = evidence_sufficient
+
         confidence = float(state.retrieval_confidence)
         reached_max = current_k >= plan.max_k
         sufficient = policy.should_stop(
@@ -145,12 +165,15 @@ def run_msarc(
             previous_confidence=previous_confidence,
             current_k=current_k,
             plan=plan,
-        )
+            evidence_score=evidence_score,
+        ) or evidence_sufficient
 
         if reached_max:
             stop_reason = "max_k_reached"
         elif confidence >= plan.confidence_threshold:
             stop_reason = "confidence_threshold"
+        elif evidence_sufficient:
+            stop_reason = "evidence_state_sufficient"
         elif previous_confidence is not None and (
             confidence - previous_confidence
         ) <= plan.convergence_epsilon:
@@ -163,6 +186,8 @@ def run_msarc(
             "retrieval_k": current_k,
             "documents": len(state.merged_results),
             "confidence": confidence,
+            "evidence_score": evidence_score,
+            "evidence_state_sufficient": evidence_sufficient,
             "agreement": float(state.signals.agreement.score),
             "margin": float(state.signals.margin.normalized_margin),
             "stability": float(state.signals.stability.score),

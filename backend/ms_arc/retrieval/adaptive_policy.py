@@ -80,8 +80,16 @@ class AdaptiveRetrievalPolicy:
         previous_confidence: float | None = None,
         current_k: int | None = None,
         plan: AdaptiveRetrievalPlan | None = None,
+        evidence_score: float | None = None,
     ) -> bool:
-        """Return whether the current retrieval depth is sufficient."""
+        """Return whether the current retrieval depth is sufficient.
+
+        ``evidence_score`` is an optional Optimization #36 signal. It is
+        intentionally additive and backward compatible with callers that only
+        provide the original MS-ARC confidence.
+        """
+        if evidence_score is not None and float(evidence_score) >= self.confidence_threshold:
+            return True
         if confidence >= self.confidence_threshold:
             return True
         if previous_confidence is not None:

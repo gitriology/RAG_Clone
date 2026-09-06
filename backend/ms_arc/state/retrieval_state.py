@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import Any, List, Dict
 
 from backend.ms_arc.state.retrieval_signals import RetrievalSignals
 
@@ -96,6 +96,11 @@ class RetrievalState:
     routing_confidence: float = 0.0
 
     decision: str = ""
+
+    # Retrieval-stage EvidenceState snapshot used by Optimization #36.
+    # The complete EvidenceState is still constructed downstream after the
+    # final graph/evidence stage.
+    evidence_state: Any = None
 
     # ======================================================
     # DEBUG INFORMATION
