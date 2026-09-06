@@ -6,6 +6,7 @@ from typing import Iterable, Optional
 from sklearn.metrics.pairwise import cosine_similarity
 
 from backend.models.model_registry import ModelRegistry
+from backend.generation.validation.embedding_cache import ValidationEmbeddingCache
 
 
 def _tokens(text: str):
@@ -28,6 +29,7 @@ def validate_answer(
     threshold=0.40,
     evidence: Optional[Iterable] = None,
     query: Optional[str] = None,
+    embedding_cache: Optional[ValidationEmbeddingCache] = None,
 ):
     """Validate answer *and* verify that the evidence actually grounds the query.
 
@@ -64,8 +66,9 @@ def validate_answer(
         return {"is_valid": False, "confidence": 0.0, "validation_scope": scope}
 
     model = ModelRegistry.get_validation_model()
-    answer_embedding = model.encode([str(answer)], normalize_embeddings=True, show_progress_bar=False)
-    candidate_embeddings = model.encode(candidates, normalize_embeddings=True, show_progress_bar=False)
+    embedding_cache = embedding_cache or ValidationEmbeddingCache(model=model)
+    answer_embedding = embedding_cache.encode([str(answer)])
+    candidate_embeddings = embedding_cache.encode(candidates)
     answer_scores = cosine_similarity(answer_embedding, candidate_embeddings)[0]
     best_answer_agreement = float(max(answer_scores)) if len(answer_scores) else 0.0
 
@@ -73,7 +76,7 @@ def validate_answer(
     best_query_semantic = 0.0
     best_query_lexical = 0.0
     if query:
-        query_embedding = model.encode([str(query)], normalize_embeddings=True, show_progress_bar=False)
+        query_embedding = embedding_cache.encode([str(query)])
         query_scores = cosine_similarity(query_embedding, candidate_embeddings)[0]
         best_query_semantic = float(max(query_scores)) if len(query_scores) else 0.0
         best_query_lexical = max((_lexical_grounding(query, c) for c in candidates), default=0.0)
@@ -131,6 +134,7 @@ def validate_answer(
         confidence = min(confidence, 0.20)
 
     print("[Answer Validation] Model ID:", id(model))
+    print("[Optimization #30] Validation embedding cache:", embedding_cache.info())
     print("[Answer Validation] Scope:", scope)
     print("[Answer Validation] Candidates:", len(candidates))
     print("[Answer Validation] Best semantic agreement:", f"{best_answer_agreement:.4f}")

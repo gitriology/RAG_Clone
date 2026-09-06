@@ -17,6 +17,10 @@ from backend.generation.validation.context_validator import (
     validate_context,
 )
 
+from backend.generation.validation.embedding_cache import (
+    ValidationEmbeddingCache,
+)
+
 from backend.generation.guards.answer_validator import (
     validate_answer,
 )
@@ -1313,9 +1317,12 @@ def run_pipeline(
     # CONTEXT VALIDATION
     # ======================================================
 
+    validation_embedding_cache = ValidationEmbeddingCache()
+
     validated_docs = validate_context(
         query,
         ranked_docs,
+        embedding_cache=validation_embedding_cache,
     )
 
     if not isinstance(
@@ -1571,6 +1578,7 @@ def run_pipeline(
             [],
         ),
         query=query,
+        embedding_cache=validation_embedding_cache,
     )
 
     if not isinstance(
@@ -1579,6 +1587,11 @@ def run_pipeline(
     ):
 
         validation = {}
+
+    print(
+        "[Optimization #30] Shared validation embedding cache final:",
+        validation_embedding_cache.info(),
+    )
 
     answer_confidence = safe_float(
         validation.get(

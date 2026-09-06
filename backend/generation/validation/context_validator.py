@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 from sentence_transformers import util
 
 from backend.models.model_registry import ModelRegistry
+from backend.generation.validation.embedding_cache import ValidationEmbeddingCache
 
 
 BROKEN_PATTERNS = (
@@ -86,34 +87,25 @@ def validate_context(
     query,
     documents,
     threshold=0.30,
+    embedding_cache: ValidationEmbeddingCache | None = None,
 ):
 
     if not documents:
         return []
 
     model = ModelRegistry.get_validation_model()
+    embedding_cache = embedding_cache or ValidationEmbeddingCache(model=model)
 
     start_time = time.perf_counter()
 
-    query_embedding = model.encode(
-        query,
-        convert_to_tensor=True,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-    )
+    query_embedding = embedding_cache.encode([query])
 
     document_texts = [
         doc.get("text", "")
         for doc in documents
     ]
 
-    doc_embeddings = model.encode(
-        document_texts,
-        batch_size=32,
-        convert_to_tensor=True,
-        normalize_embeddings=True,
-        show_progress_bar=False,
-    )
+    doc_embeddings = embedding_cache.encode(document_texts)
 
     document_scores = util.cos_sim(
         query_embedding,
@@ -146,13 +138,7 @@ def validate_context(
     best_sentence_scores = [0.0] * len(documents)
 
     if sentence_candidates:
-        sentence_embeddings = model.encode(
-            sentence_candidates,
-            batch_size=64,
-            convert_to_tensor=True,
-            normalize_embeddings=True,
-            show_progress_bar=False,
-        )
+        sentence_embeddings = embedding_cache.encode(sentence_candidates)
 
         sentence_scores = util.cos_sim(
             query_embedding,
@@ -218,6 +204,12 @@ def validate_context(
     print(
         "[Context Validation] Model ID:",
         id(model),
+    )
+
+    cache_info = embedding_cache.info()
+    print(
+        "[Optimization #30] Validation embedding cache:",
+        cache_info,
     )
 
     return documents
