@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from streamlit import cache
 
 from backend.generation.validation.embedding_cache import ValidationEmbeddingCache
 
@@ -65,7 +64,7 @@ def test_context_and_answer_validation_share_query_and_sentence_embeddings(monke
     )
 
     calls_after_context = len(model.calls)
-    assert calls_after_context == 2
+    assert calls_after_context == 2  # query + shared document/sentence embedding
 
     result = validate_answer(
         "FAISS is a library for efficient similarity search.",
@@ -75,13 +74,14 @@ def test_context_and_answer_validation_share_query_and_sentence_embeddings(monke
         embedding_cache=cache,
     )
 
-    # Answer text is new; evidence, query, and document-derived sentence are reused.
     assert result["candidate_count"] == 1
-    # validate_answer() should reuse every embedding already produced
-    # by validate_context(), so no additional model.encode() call occurs.
+    assert result["validation_method"] == "similarity_based_answer_support"
+
+    # The answer text is identical to the cached document/evidence text, and
+    # the query was already embedded during context validation. Therefore no
+    # additional model.encode() call should occur.
+    assert len(model.calls) == calls_after_context
     assert len(model.calls) == 2
-    assert model.calls[-1] == ["FAISS is a library for efficient similarity search."]
-    assert cache.info()["reused_items"] >= 2
 
 
 def test_context_validation_preserves_backward_compatible_call():

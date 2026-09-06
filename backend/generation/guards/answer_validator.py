@@ -31,14 +31,22 @@ def validate_answer(
     query: Optional[str] = None,
     embedding_cache: Optional[ValidationEmbeddingCache] = None,
 ):
-    """Validate answer *and* verify that the evidence actually grounds the query.
+    """Assess similarity-based answer support from selected evidence.
 
+    This validator measures semantic similarity and query grounding. It does
+    not perform factual entailment verification and therefore must not be
+    interpreted as proof that an answer is factually true or hallucination-free.
     Comparing an answer only with its own selected evidence is insufficient:
-    an irrelevant sentence can agree with itself perfectly.  We therefore
-    calculate a second signal, query_grounding, and require it for validity.
+    an irrelevant sentence can agree with itself perfectly. We therefore
+    calculate query-grounding signals and require them for validity.
     """
     if not answer:
-        return {"is_valid": False, "confidence": 0.0, "validation_scope": "empty_answer"}
+        return {
+            "is_valid": False,
+            "confidence": 0.0,
+            "validation_scope": "empty_answer",
+            "validation_method": "similarity_based_answer_support",
+        }
 
     candidates = []
     for item in evidence or []:
@@ -60,10 +68,16 @@ def validate_answer(
             "validation_scope": scope,
             "candidate_count": 0,
             "threshold": float(threshold),
+            "validation_method": "similarity_based_answer_support",
         }
 
     if not candidates:
-        return {"is_valid": False, "confidence": 0.0, "validation_scope": scope}
+        return {
+            "is_valid": False,
+            "confidence": 0.0,
+            "validation_scope": scope,
+            "validation_method": "similarity_based_answer_support",
+        }
 
     model = ModelRegistry.get_validation_model()
     embedding_cache = embedding_cache or ValidationEmbeddingCache(model=model)
@@ -88,7 +102,8 @@ def validate_answer(
         )
 
     # Agreement with evidence is necessary but not sufficient. Query grounding
-    # is what prevents "answering the retrieved sentence" from looking valid.
+    # helps prevent "answering the retrieved sentence" from looking valid.
+    # These are similarity signals, not factual entailment.
     is_valid = best_answer_agreement >= float(threshold)
 
     # Identity/definition questions require answer-form evidence. A sentence
@@ -133,6 +148,7 @@ def validate_answer(
     if not is_valid:
         confidence = min(confidence, 0.20)
 
+    print("[Answer Validation] Method: similarity-based answer support")
     print("[Answer Validation] Model ID:", id(model))
     print("[Optimization #30] Validation embedding cache:", embedding_cache.info())
     print("[Answer Validation] Scope:", scope)
@@ -153,4 +169,5 @@ def validate_answer(
         "validation_scope": scope,
         "candidate_count": len(candidates),
         "threshold": float(threshold),
+        "validation_method": "similarity_based_answer_support",
     }
