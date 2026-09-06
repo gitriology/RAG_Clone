@@ -891,6 +891,33 @@ def encode_candidates(sentences: List[str]):
 # SCORE CANDIDATES
 # ==========================================================
 
+def _encode_query_and_candidates(
+    query: str,
+    sentences: List[str],
+):
+    """Encode the query and candidate sentences in one model pass.
+
+    Optimization #32: query and sentence embeddings are produced together,
+    avoiding a separate model.encode() call for the query. The returned
+    candidate embeddings remain aligned with ``sentences``.
+    """
+    if not sentences:
+        return None, None
+
+    model = ModelRegistry.get_embedding_model()
+    encoded = model.encode(
+        [query, *sentences],
+        convert_to_tensor=True,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+    )
+
+    if getattr(encoded, "dim", lambda: 0)() == 1:
+        encoded = encoded.unsqueeze(0)
+
+    return encoded[0], encoded[1:]
+
+
 def score_sentences(
     query: str,
     sentences: List[str],
@@ -904,15 +931,14 @@ def score_sentences(
     if not sentences:
         return [], {}, None
 
-    model = ModelRegistry.get_embedding_model()
-    query_embedding = model.encode(
+    query_embedding, candidate_embeddings = _encode_query_and_candidates(
         query,
-        convert_to_tensor=True,
-        normalize_embeddings=True,
-        show_progress_bar=False,
+        sentences,
     )
-    candidate_embeddings = encode_candidates(sentences)
-    semantic_scores = util.cos_sim(query_embedding, candidate_embeddings)[0]
+    semantic_scores = util.cos_sim(
+        query_embedding,
+        candidate_embeddings,
+    )[0]
 
     scored: List[Dict[str, Any]] = []
     for index, sentence in enumerate(sentences):
@@ -1280,7 +1306,7 @@ def generate_answer(
     print(f"Best Semantic Score : {best_semantic:.4f}")
     print(f"Best Evidence Score : {best_evidence:.4f}")
     print(f"Question Targets    : {covered_targets}")
-    print("Embedding Passes    : 1")
+    print("Embedding Passes    : 1 (query + candidates batched)")
     print(f"Reusable Embeddings : {len(embedding_map)}")
 
     print()
@@ -1311,4 +1337,5 @@ def generate_answer(
         "embedding_reuse_enabled": True,
         "embedding_passes": 1,
         "embedding_fallbacks": 0,
+        "query_embedding_batched": True,
     }
