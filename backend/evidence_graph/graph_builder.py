@@ -9,7 +9,10 @@ from backend.evidence_graph.models.evidence_node import EvidenceNode
 from backend.evidence_graph.edge_builder import build_edges
 from backend.evidence_graph.models.graph_statistics import compute_graph_statistics
 from backend.evidence_graph.clustering.evidence_cluster import build_clusters
-from backend.evidence_graph.analytics.graph_analysis import analyze_graph
+from backend.evidence_graph.analytics.graph_analysis import (
+    analyze_graph,
+    ANALYTIC_METRICS,
+)
 from backend.evidence_graph.quality.graph_coherence import compute_graph_coherence
 from backend.evidence_graph.quality.evidence_quality import compute_evidence_quality
 from backend.evidence_graph.graph_score import compute_graph_score
@@ -64,58 +67,59 @@ def _cheap_sufficiency_check(
     return True, "high_confidence_connected_graph"
 
 
-def _compute_full_analytics(
+def _finish_full_analytics_after_metrics(
     retrieval_state: RetrievalState,
     graph_state: EvidenceGraphState,
 ) -> EvidenceGraphState:
-    """Complete the expensive Evidence Graph analysis stages."""
+    """Materialize downstream analytics after all centrality metrics exist."""
 
-    # Graph Analytics / centrality
-    graph_state = analyze_graph(graph_state)
-
-    # Evidence Quality
     graph_state = compute_evidence_quality(
         retrieval_state,
         graph_state,
     )
 
-    # Graph-based Evidence Ranking
     graph_ranking = build_graph_ranking(graph_state)
 
-    graph_state.signals.ranking.average_score = (
-        graph_ranking.statistics.average_score
-    )
-    graph_state.signals.ranking.highest_score = (
-        graph_ranking.statistics.highest_score
-    )
-    graph_state.signals.ranking.lowest_score = (
-        graph_ranking.statistics.lowest_score
-    )
-    graph_state.signals.ranking.graph_consensus = (
-        graph_ranking.consensus.score
-    )
+    graph_state.signals.ranking.average_score = graph_ranking.statistics.average_score
+    graph_state.signals.ranking.highest_score = graph_ranking.statistics.highest_score
+    graph_state.signals.ranking.lowest_score = graph_ranking.statistics.lowest_score
+    graph_state.signals.ranking.graph_consensus = graph_ranking.consensus.score
     graph_state.ranking = graph_ranking
 
-    # Overall Graph Score
     graph_state.graph_score = compute_graph_score(graph_state)
-
-    # Structural validation is cheap enough to retain in both modes.
     graph_state.validation = validate_graph(graph_state)
-
     graph_state.analytics_computed = True
     return graph_state
+
+
+def _compute_full_analytics(
+    retrieval_state: RetrievalState,
+    graph_state: EvidenceGraphState,
+) -> EvidenceGraphState:
+    """Complete the historical full analytics contract."""
+
+    graph_state = analyze_graph(graph_state, metrics=ANALYTIC_METRICS)
+    graph_state.analytics_metrics_computed.update(ANALYTIC_METRICS)
+    return _finish_full_analytics_after_metrics(
+        retrieval_state,
+        graph_state,
+    )
 
 
 def ensure_graph_analytics(
     retrieval_state: RetrievalState,
     graph_state: EvidenceGraphState,
+    metrics=None,
 ) -> EvidenceGraphState:
     """
-    Lazily materialize expensive graph analytics when a downstream consumer
-    actually requires them.
+    Lazily materialize only the requested graph analytics.
 
-    This is the public escape hatch for callers using ``analytics_mode='lazy'``.
-    Repeated calls are idempotent and do not recompute analytics.
+    Optimization #35 makes graph analytics metric-level lazy: callers can
+    request a small subset such as ``{"degree", "pagerank"}`` without
+    paying for betweenness, closeness, and eigenvector centrality.
+
+    ``metrics=None`` requests the complete historical analytics contract.
+    Repeated requests are idempotent and already-computed metrics are reused.
     """
 
     if retrieval_state is None:
@@ -128,13 +132,32 @@ def ensure_graph_analytics(
             "ensure_graph_analytics() received graph_state=None."
         )
 
-    if graph_state.analytics_computed:
-        return graph_state
+    requested = set(ANALYTIC_METRICS if metrics is None else metrics)
+    requested = {str(metric).lower() for metric in requested}
+    unknown = requested - ANALYTIC_METRICS
+    if unknown:
+        raise ValueError(
+            f"Unsupported graph analytic metrics: {sorted(unknown)}. "
+            f"Expected subset of {sorted(ANALYTIC_METRICS)}."
+        )
 
-    return _compute_full_analytics(
-        retrieval_state,
-        graph_state,
-    )
+    missing = requested - set(graph_state.analytics_metrics_computed)
+    if missing:
+        graph_state = analyze_graph(
+            graph_state,
+            metrics=missing,
+        )
+        graph_state.analytics_metrics_computed.update(missing)
+
+    if requested == ANALYTIC_METRICS and not graph_state.analytics_computed:
+        # Once every metric exists, materialize the historical downstream
+        # quality/ranking/score contract exactly once.
+        graph_state = _finish_full_analytics_after_metrics(
+            retrieval_state,
+            graph_state,
+        )
+
+    return graph_state
 
 
 def build_graph(
@@ -187,6 +210,7 @@ def build_graph(
     graph_state = EvidenceGraphState()
     graph_state.analytics_mode = analytics_mode
     graph_state.analytics_computed = False
+    graph_state.analytics_metrics_computed.clear()
 
     graph = nx.Graph()
     evidence_nodes = []

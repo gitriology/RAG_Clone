@@ -116,6 +116,8 @@ class EvidenceGraphState:
 
     analytics_computed: bool = False
 
+    analytics_metrics_computed: set[str] = field(default_factory=set)
+
     analytics_sufficiency: bool = False
 
     analytics_skip_reason: str = ""
