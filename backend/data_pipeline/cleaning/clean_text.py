@@ -49,6 +49,7 @@ MIN_LINE_LENGTH = 2
 REPEATED_PAGE_FRACTION = 0.35
 
 MAX_HEADER_FOOTER_LINES = 3
+PAGE_EDGE_FRACTION = 0.15
 
 JUNK_TOKEN_PATTERNS = [
     re.compile(
@@ -272,6 +273,7 @@ def _repair_hyphenation(
 
 def _is_probable_junk_line(
     line: str,
+    ignore_page_numbers: bool = False,
 ) -> bool:
 
     value = line.strip()
@@ -282,17 +284,22 @@ def _is_probable_junk_line(
     if len(value) <= 1:
         return True
 
-    if PAGE_NUMBER_PATTERN.fullmatch(
+    if not ignore_page_numbers and PAGE_NUMBER_PATTERN.fullmatch(
         value
     ):
         return True
 
-    if PAGE_OF_PATTERN.fullmatch(
+    if not ignore_page_numbers and PAGE_OF_PATTERN.fullmatch(
         value
     ):
         return True
 
     for pattern in JUNK_TOKEN_PATTERNS:
+
+        # Page-number patterns are handled separately using page
+        # metadata/geometry when ignore_page_numbers=True.
+        if ignore_page_numbers and pattern.pattern == r"^(?:page|pg\.?)\s*\d+$":
+            continue
 
         if pattern.fullmatch(
             value
@@ -422,13 +429,12 @@ def _detect_repeated_lines(
     pages: Sequence[Dict[str, Any]],
 ) -> set[str]:
     """
-    Detect repeated page headers/footers.
+    Detect repeated page headers/footers using page geometry.
 
-    A line appearing at the same top/bottom region across a
-    significant fraction of pages is considered boilerplate.
-
-    This is intentionally document-local: a valid phrase in one
-    document should not become global junk.
+    Only lines extracted from the physical top/bottom regions are
+    considered boilerplate candidates. This prevents a repeated
+    numeric value in the document body from being mistaken for a
+    footer merely because it appears near the end of a text string.
     """
 
     if len(pages) < 3:
@@ -438,70 +444,113 @@ def _detect_repeated_lines(
     page_count = len(pages)
 
     for page in pages:
-
-        lines = [
-            _normalize_line(
-                line
-            )
-            for line in str(
-                page.get(
-                    "text",
-                    "",
-                )
-            ).splitlines()
-        ]
-
-        lines = [
-            line
-            for line in lines
-            if line
-        ]
-
-        candidates = (
-            lines[
-                :MAX_HEADER_FOOTER_LINES
-            ]
-            +
-            lines[
-                -MAX_HEADER_FOOTER_LINES:
-            ]
-        )
-
-        seen_on_page = set()
-
+        candidates = _page_edge_line_signatures(page)
         for line in candidates:
-
-            signature = _line_signature(
-                line
-            )
-
-            if (
-                len(signature) >= 3
-                and signature not in seen_on_page
-            ):
-
-                counter[
-                    signature
-                ] += 1
-
-                seen_on_page.add(
-                    signature
-                )
+            signature = _line_signature(line)
+            # A numeric-only signature collapses all page numbers to
+            # the same ``#`` token. Do not classify it as repeated
+            # boilerplate; page numbers are handled with page-number
+            # metadata in _is_page_number_artifact().
+            if signature == "#":
+                continue
+            if len(signature) >= 3:
+                counter[signature] += 1
 
     threshold = max(
         2,
-        int(
-            page_count
-            * REPEATED_PAGE_FRACTION
-        ),
+        int(page_count * REPEATED_PAGE_FRACTION),
     )
 
     return {
         signature
-        for signature, count
-        in counter.items()
+        for signature, count in counter.items()
         if count >= threshold
     }
+
+
+# ==========================================================
+# PAGE-METADATA-AWARE PAGE NUMBER DETECTION
+# ==========================================================
+
+def _page_edge_line_signatures(
+    page: Dict[str, Any],
+) -> set[str]:
+    """
+    Return normalized line signatures located near the physical
+    top/bottom of a page, using loader-provided block geometry.
+
+    This deliberately uses page metadata/geometry rather than
+    deleting every line that merely looks like ``Page 12`` or
+    ``12``. A legitimate body reference such as ``Page 12`` is
+    therefore preserved when it occurs in the middle of a page.
+    """
+
+    height = float(page.get("height", 0.0) or 0.0)
+    blocks = page.get("blocks") or []
+
+    if height <= 0 or not blocks:
+        return set()
+
+    signatures: set[str] = set()
+
+    for block in blocks:
+        try:
+            y0 = float(block.get("y0", 0.0))
+            y1 = float(block.get("y1", y0))
+        except (TypeError, ValueError):
+            continue
+
+        if y0 <= height * PAGE_EDGE_FRACTION or y1 >= height * (1.0 - PAGE_EDGE_FRACTION):
+            for line in str(block.get("text", "")).splitlines():
+                normalized = _normalize_line(line)
+                if normalized:
+                    signatures.add(normalized)
+
+    return signatures
+
+
+def _is_page_number_artifact(
+    line: str,
+    page: Dict[str, Any],
+    edge_signatures: set[str],
+) -> bool:
+    """
+    Detect a page-number extraction artefact only when there is
+    page-level evidence supporting the interpretation.
+
+    Evidence sources:
+      1. The line is physically located in a top/bottom block.
+      2. The line contains the loader's page_number.
+
+    Without that evidence, numeric lines are left untouched.
+    """
+
+    value = line.strip()
+    if value not in edge_signatures:
+        return False
+
+    page_number = page.get("page_number")
+    if page_number is None:
+        return False
+
+    try:
+        page_number = int(page_number)
+    except (TypeError, ValueError):
+        return False
+
+    number_match = re.fullmatch(r"(?:page\s*)?(\d{1,5})", value, re.IGNORECASE)
+    if number_match:
+        return int(number_match.group(1)) == page_number
+
+    page_of_match = re.fullmatch(
+        r"page\s+(\d{1,5})\s*(?:of|/)\s*\d{1,5}",
+        value,
+        re.IGNORECASE,
+    )
+    if page_of_match:
+        return int(page_of_match.group(1)) == page_number
+
+    return False
 
 
 # ==========================================================
@@ -538,6 +587,11 @@ def clean_page(
         for line in raw_lines
     ]
 
+    # Use loader-provided page geometry when available. This is the
+    # key Optimization #39 change: page-like lines are not removed
+    # solely because they match a generic regex.
+    edge_signatures = _page_edge_line_signatures(page)
+
     # Remove empty/junk lines.
     filtered: List[str] = []
 
@@ -553,8 +607,20 @@ def clean_page(
         if signature in repeated_lines:
             continue
 
+        if _is_page_number_artifact(
+            line,
+            page,
+            edge_signatures,
+        ):
+            continue
+
+        # Generic junk detection deliberately runs after the
+        # metadata-aware page-number check. Numeric body lines are
+        # therefore not discarded merely because they look like a
+        # page number.
         if _is_probable_junk_line(
-            line
+            line,
+            ignore_page_numbers=True,
         ):
             continue
 
