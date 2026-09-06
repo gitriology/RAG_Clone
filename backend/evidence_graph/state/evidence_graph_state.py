@@ -109,6 +109,18 @@ class EvidenceGraphState:
     ranking: Optional[object] = None
 
     # ======================================================
+    # OPTIMIZATION #34 — LAZY ANALYTICS STATE
+    # ======================================================
+
+    analytics_mode: str = "full"
+
+    analytics_computed: bool = False
+
+    analytics_sufficiency: bool = False
+
+    analytics_skip_reason: str = ""
+
+    # ======================================================
     # VALIDATION
     # ======================================================
 
