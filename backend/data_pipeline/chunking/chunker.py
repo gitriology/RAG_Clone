@@ -39,11 +39,11 @@ import re
 # CONFIGURATION
 # ==========================================================
 
-DEFAULT_CHUNK_SIZE = 300
-DEFAULT_OVERLAP = 45
+DEFAULT_CHUNK_SIZE = 500
+DEFAULT_OVERLAP = 100
 
 MIN_CHUNK_WORDS = 45
-MAX_CHUNK_WORDS = 360
+MAX_CHUNK_WORDS = 600
 
 # Don't create tiny chunks merely because a PDF contains a
 # heading/table label.

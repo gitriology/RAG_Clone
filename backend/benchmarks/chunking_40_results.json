@@ -1,0 +1,93 @@
+{
+  "optimization": 40,
+  "evaluation_queries": 10,
+  "configurations": [
+    {
+      "chunk_size": 200,
+      "overlap": 40
+    },
+    {
+      "chunk_size": 300,
+      "overlap": 60
+    },
+    {
+      "chunk_size": 400,
+      "overlap": 80
+    },
+    {
+      "chunk_size": 500,
+      "overlap": 100
+    }
+  ],
+  "winner": {
+    "chunk_size": 500,
+    "overlap": 100
+  },
+  "results": [
+    {
+      "chunk_count": 4085,
+      "index_build_ms": 505.4120998829603,
+      "retrieval_ms": 747.9262000415474,
+      "total_ms": 1253.3382999245077,
+      "recall_at_5": 1.0,
+      "precision_at_5": 0.96,
+      "mrr_at_5": 0.95,
+      "context_relevance": 0.8373333333333333,
+      "answer_support_accuracy": 0.4,
+      "chunk_size": 200,
+      "overlap": 40,
+      "chunking_ms": 1928.602100117132,
+      "end_to_end_benchmark_ms": 3181.94040004164
+    },
+    {
+      "chunk_count": 2723,
+      "index_build_ms": 401.57519979402423,
+      "retrieval_ms": 657.2598998900503,
+      "total_ms": 1058.8350996840745,
+      "recall_at_5": 1.0,
+      "precision_at_5": 0.94,
+      "mrr_at_5": 1.0,
+      "context_relevance": 0.9043333333333333,
+      "answer_support_accuracy": 0.7,
+      "chunk_size": 300,
+      "overlap": 60,
+      "chunking_ms": 1656.534899957478,
+      "end_to_end_benchmark_ms": 2715.3699996415526
+    },
+    {
+      "chunk_count": 2044,
+      "index_build_ms": 468.80569984205067,
+      "retrieval_ms": 740.006199805066,
+      "total_ms": 1208.8118996471167,
+      "recall_at_5": 1.0,
+      "precision_at_5": 0.96,
+      "mrr_at_5": 1.0,
+      "context_relevance": 0.9133333333333333,
+      "answer_support_accuracy": 0.8,
+      "chunk_size": 400,
+      "overlap": 80,
+      "chunking_ms": 1699.6172000654042,
+      "end_to_end_benchmark_ms": 2908.429099712521
+    },
+    {
+      "chunk_count": 1634,
+      "index_build_ms": 651.8242999445647,
+      "retrieval_ms": 811.0732999630272,
+      "total_ms": 1462.897599907592,
+      "recall_at_5": 1.0,
+      "precision_at_5": 0.96,
+      "mrr_at_5": 1.0,
+      "context_relevance": 0.9343333333333333,
+      "answer_support_accuracy": 0.9,
+      "chunk_size": 500,
+      "overlap": 100,
+      "chunking_ms": 2092.6401000469923,
+      "end_to_end_benchmark_ms": 3555.5376999545842
+    }
+  ],
+  "notes": [
+    "Corpus text is reconstructed from existing processed chunks because the ZIP does not contain all original PDFs.",
+    "Answer-support accuracy is an extractive labelled-context proxy, not factual entailment.",
+    "Latency is benchmark retrieval latency using dependency-free BM25; it is not end-to-end production RAG latency."
+  ]
+}
