@@ -336,6 +336,79 @@ def infer_document_type(
 
 
 # ==========================================================
+# OPTIMIZATION #41 METADATA HELPERS
+# ==========================================================
+
+_SECTION_HEADING_PATTERN = re.compile(
+    r"^(?:\d+(?:\.\d+)*\.?\s+)?[A-Z][A-Za-z0-9][A-Za-z0-9 ,:&()/'\-]{2,100}$"
+)
+
+
+def _looks_like_section_heading(line: str) -> bool:
+    """Conservative section-heading detector for provenance metadata."""
+    value = re.sub(r"\s+", " ", str(line or "")).strip()
+
+    if not value or len(value) > 110:
+        return False
+
+    if len(value.split()) > 16:
+        return False
+
+    if value.endswith((".", "?", "!")):
+        return False
+
+    return bool(_SECTION_HEADING_PATTERN.fullmatch(value))
+
+
+def _build_page_section_map(
+    pages: Sequence[Dict[str, Any]],
+) -> Dict[int, str | None]:
+    """
+    Track the most recent plausible section heading by PDF page.
+
+    This is metadata-only: it never changes page/chunk text or chunk
+    boundaries. If no reliable heading is available, the value remains
+    None rather than inventing a section name.
+    """
+    current_section: str | None = None
+    page_sections: Dict[int, str | None] = {}
+
+    for page in pages:
+        page_number = int(page.get("page_number", 0) or 0)
+        explicit_section = page.get("section")
+
+        if explicit_section:
+            current_section = str(explicit_section).strip() or current_section
+        else:
+            for line in str(page.get("text", "")).splitlines():
+                candidate = line.strip()
+                if _looks_like_section_heading(candidate):
+                    current_section = candidate
+                    break
+
+        page_sections[page_number] = current_section
+
+    return page_sections
+
+
+def _source_timestamp(
+    pdf_path: Path,
+) -> str:
+    """
+    Stable UTC timestamp for the source file.
+
+    Using the source modification time keeps record metadata
+    reproducible across pipeline reruns while still providing a
+    meaningful timestamp.
+    """
+    modified = pdf_path.stat().st_mtime
+    return datetime.fromtimestamp(
+        modified,
+        tz=timezone.utc,
+    ).isoformat()
+
+
+# ==========================================================
 # CHUNK METADATA
 # ==========================================================
 
@@ -349,6 +422,8 @@ def build_chunk_record(
     domain: str,
     document_type: str,
     source_file_hash: str,
+    page_sections: Dict[int, str | None],
+    timestamp: str,
 ) -> Dict[str, Any]:
 
     text = str(
@@ -386,6 +461,25 @@ def build_chunk_record(
         # --------------------------------------------------
 
         "document_id": document_id,
+
+        # Optimization #41: explicit provenance metadata.
+        # For a multi-page chunk, page_number is its first/source page;
+        # existing page_start/page_end preserve the full span.
+        "page_number": (
+            int(page_start)
+            if page_start is not None
+            else None
+        ),
+
+        "section": (
+            page_sections.get(
+                int(page_start)
+            )
+            if page_start is not None
+            else None
+        ),
+
+        "timestamp": timestamp,
 
         "source_path": source_path,
 
@@ -629,6 +723,15 @@ def process_pdf(
         f"{len(chunks)}"
     )
 
+    # Optimization #41 metadata is computed after chunking so it
+    # cannot alter the existing chunking behavior from Optimization #40.
+    page_sections = _build_page_section_map(
+        cleaned_pages
+    )
+    timestamp = _source_timestamp(
+        pdf_path
+    )
+
     # ------------------------------------------------------
     # 5. METADATA
     # ------------------------------------------------------
@@ -684,6 +787,8 @@ def process_pdf(
             domain=domain,
             document_type=document_type,
             source_file_hash=source_hash,
+            page_sections=page_sections,
+            timestamp=timestamp,
         )
 
         records.append(
