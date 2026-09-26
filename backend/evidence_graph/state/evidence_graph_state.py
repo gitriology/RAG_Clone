@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
+from typing import List, Dict, Tuple, Set
 
 import networkx as nx
 
@@ -45,7 +46,7 @@ class EvidenceGraphState:
     # GRAPH NODES
     # ======================================================
 
-    nodes: list[EvidenceNode] = field(
+    nodes: List[EvidenceNode] = field(
         default_factory=list
     )
 
@@ -53,7 +54,7 @@ class EvidenceGraphState:
     # GRAPH EDGES
     # ======================================================
 
-    edges: list[EvidenceEdge] = field(
+    edges: List[EvidenceEdge] = field(
         default_factory=list
     )
 
@@ -61,12 +62,12 @@ class EvidenceGraphState:
     # LOOKUPS
     # ======================================================
 
-    node_lookup: dict[str, EvidenceNode] = field(
+    node_lookup: Dict[str, EvidenceNode] = field(
         default_factory=dict
     )
 
-    edge_lookup: dict[
-        tuple[str, str],
+    edge_lookup: Dict[
+        Tuple[str, str],
         EvidenceEdge,
     ] = field(
         default_factory=dict
@@ -92,7 +93,7 @@ class EvidenceGraphState:
     # CLUSTERS
     # ======================================================
 
-    clusters: list[EvidenceCluster] = field(
+    clusters: List[EvidenceCluster] = field(
         default_factory=list
     )
 
@@ -116,7 +117,7 @@ class EvidenceGraphState:
 
     analytics_computed: bool = False
 
-    analytics_metrics_computed: set[str] = field(default_factory=set)
+    analytics_metrics_computed: Set[str] = field(default_factory=set)
 
     analytics_sufficiency: bool = False
 

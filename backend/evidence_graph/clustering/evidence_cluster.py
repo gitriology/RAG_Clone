@@ -1,5 +1,5 @@
 import networkx as nx
-
+from typing import List
 from backend.evidence_graph.state.evidence_graph_state import (
     EvidenceGraphState,
 )
@@ -13,7 +13,7 @@ from backend.evidence_graph.models.evidence_cluster import (
 
 def compute_cluster_score(
     graph: nx.Graph,
-    nodes: list[str],
+    nodes: List[str],
 ) -> float:
     """
     Cluster quality.
@@ -45,7 +45,7 @@ def compute_cluster_score(
 
 def find_centroid(
     graph: nx.Graph,
-    nodes: list[str],
+    nodes: List[str],
 ) -> str:
     """
     Picks the highest confidence document
