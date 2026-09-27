@@ -4,13 +4,21 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.reranker.scoring.run_rerank import run_pipeline
 
+import os
+
 PIPELINE_VERSION = "confidence-calibration-v3"
 
 app = FastAPI(title="RAG API", version=PIPELINE_VERSION)
 
+FRONTEND_ORIGIN = os.getenv(
+    "FRONTEND_ORIGIN",
+    "http://localhost:5173",
+)
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[FRONTEND_ORIGIN],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

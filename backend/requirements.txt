@@ -1,7 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic
+numpy
 pymupdf
 nltk
 sentence-transformers
-faiss-cpu 
+faiss-cpu
 rank-bm25
-numpy
 tqdm
+spacy
+scikit-learn
+networkx
