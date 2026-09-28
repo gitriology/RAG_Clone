@@ -5,6 +5,8 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/opt/huggingface
+ENV TRANSFORMERS_CACHE=/opt/huggingface
+ENV TOKENIZERS_PARALLELISM=false
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -13,13 +15,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY backend/requirements.txt ./backend/requirements.txt
 
-RUN pip install --no-cache-dir -r ./backend/requirements.txt
+# Install CPU-only PyTorch.
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch
+
+# Install the remaining application dependencies.
+RUN pip install --no-cache-dir \
+    -r ./backend/requirements.txt
 
 RUN python -m spacy download en_core_web_sm
 
 COPY backend ./backend
 COPY data/processed/all_domains.json ./data/processed/all_domains.json
 
+# Download required Hugging Face models.
 RUN python - <<'PY'
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
@@ -35,6 +45,7 @@ CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 print("All models downloaded successfully.")
 PY
 
+# Generate retrieval artifacts.
 RUN python -m backend.retrieval.utils.save_embeddings
 
 RUN python -m backend.retrieval.index.build_index
