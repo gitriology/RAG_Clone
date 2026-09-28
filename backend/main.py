@@ -18,10 +18,10 @@ FRONTEND_ORIGIN = os.getenv(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_ORIGIN],
+    allow_origins=["*"],  # Allows requests from Vercel
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # Allows POST, GET, OPTIONS, etc.
+    allow_headers=["*"],  # CRITICAL: Allows ngrok-skip-browser-warning header
 )
 
 
