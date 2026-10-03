@@ -1,34 +1,39 @@
-function InputBox({ input, setInput, sendMessage }) {
-  const handleSend = () => {
-    if (!input.trim()) return;
+import { ArrowUp, Sparkles } from "lucide-react";
 
+function InputBox({ input, setInput, sendMessage, disabled }) {
+  const handleSend = () => {
+    if (!input.trim() || disabled) return;
     sendMessage();
-    setInput("");
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
   return (
-    <div className="p-4 bg-white flex gap-2 border-t">
-      <input
-        className="flex-1 border rounded-lg px-3 py-2"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="Ask anything..."
-        onKeyDown={handleKeyDown}
-      />
-
-      <button
-        onClick={handleSend}
-        className="bg-blue-600 text-white px-4 py-2 rounded-lg"
-      >
-        Send
-      </button>
+    <div className="query-bar-wrap">
+      <div className="query-bar">
+        <Sparkles size={18} className="query-sparkle" />
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="What are the latest advancements in retrieval-augmented generation?"
+          onKeyDown={handleKeyDown}
+          disabled={disabled}
+          aria-label="Research question"
+        />
+        <button
+          className="send-button"
+          onClick={handleSend}
+          disabled={disabled || !input.trim()}
+          aria-label="Send query"
+        >
+          <ArrowUp size={21} />
+        </button>
+      </div>
     </div>
   );
 }
