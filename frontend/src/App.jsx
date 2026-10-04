@@ -8,6 +8,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { sendQuery } from "./services/api";
 import {
   addMessage,
+  buildAssistantMessageData,
   createConversation,
   deleteConversation,
   getConversationMessages,
@@ -79,6 +80,7 @@ function mapStoredMessage(message) {
 }
 
 function ResearchApp() {
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { user, loading } = useAuth();
 
   const [input, setInput] = useState("");
@@ -154,6 +156,7 @@ function ResearchApp() {
 
   const newChat = () => {
     if (sending || conversationLoading) return;
+    setMobileSidebarOpen(false);
 
     currentThreadIdRef.current = null;
     setCurrentThreadId(null);
@@ -164,6 +167,7 @@ function ResearchApp() {
 
   const selectConversation = async (conversationId) => {
     if (conversationId === currentThreadIdRef.current) return;
+    setMobileSidebarOpen(false);
     if (sending) return;
 
     setConversationLoading(true);
@@ -353,24 +357,7 @@ function ResearchApp() {
           // Store only the metadata needed to reconstruct the UI.
           // The full evidence graph is intentionally not stored because Firestore
           // documents have a 1 MiB size limit.
-          await addMessage(conversationId, {
-            role: "assistant",
-            text: botMsg.text,
-            title: botMsg.title,
-            confidence: botMsg.confidence,
-            sources: botMsg.sources,
-            pipelineVersion: botMsg.pipelineVersion,
-            answerValid: botMsg.answerValid,
-            retrievalConfidence: botMsg.retrievalConfidence,
-            answerConfidence: botMsg.answerConfidence,
-            evidenceGraph: botMsg.evidenceGraph,
-            evidenceState: botMsg.evidenceState,
-            agreement: botMsg.agreement,
-            complexity: botMsg.complexity,
-            margin: botMsg.margin,
-            stability: botMsg.stability,
-            recommendedTopK: botMsg.recommendedTopK,
-          });
+          await addMessage(conversationId, buildAssistantMessageData(botMsg));
         } catch (firestoreError) {
           console.error("Could not save assistant message:", firestoreError);
           setHistoryError(
@@ -431,6 +418,7 @@ function ResearchApp() {
   return (
     <div className={appClass}>
       <Sidebar
+        isMobileOpen={mobileSidebarOpen}
         onNewChat={newChat}
         recentThreads={recentThreads}
         currentThreadId={currentThreadId}
@@ -440,8 +428,18 @@ function ResearchApp() {
         historyError={historyError}
       />
 
+      {mobileSidebarOpen && (
+        <button
+          type="button"
+          className="sidebar-overlay"
+          onClick={() => setMobileSidebarOpen(false)}
+          aria-label="Close sidebar"
+        />
+      )}
+
       <div className="main-area">
         <Header
+          onMenuClick={() => setMobileSidebarOpen((open) => !open)}
           theme={theme}
           onToggleTheme={() =>
             setTheme((value) => (value === "dark" ? "light" : "dark"))

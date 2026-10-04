@@ -1,7 +1,9 @@
 import MessageBubble from "./MessageBubble";
 import RightPanel from "./RightPanel";
+import { useState } from "react";
 
 function ChatWindow({ messages, chatEndRef }) {
+  const [mobileRetrievalOpen, setMobileRetrievalOpen] = useState(false);
   const assistantMessages = messages.filter(
     (message) => message.type === "bot" && !message.loading,
   );
@@ -27,7 +29,24 @@ function ChatWindow({ messages, chatEndRef }) {
         <div ref={chatEndRef} />
       </main>
       <div className="right-column">
-        <RightPanel answer={latestAnswer} />
+        <div className="mobile-retrieval-shell">
+          <button
+            type="button"
+            className="mobile-retrieval-toggle"
+            onClick={() => setMobileRetrievalOpen((open) => !open)}
+            aria-expanded={mobileRetrievalOpen}
+          >
+            <span>Retrieval Details</span>
+            <span className="mobile-retrieval-chevron" aria-hidden="true">
+              {mobileRetrievalOpen ? "−" : "+"}
+            </span>
+          </button>
+          <div
+            className={`mobile-retrieval-content ${mobileRetrievalOpen ? "open" : ""}`}
+          >
+            <RightPanel answer={latestAnswer} />
+          </div>
+        </div>
       </div>
     </div>
   );

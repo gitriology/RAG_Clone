@@ -12,6 +12,7 @@ import darkLeaf from "../assets/branding/ragar-leafmark-dark.png";
 import lightLeaf from "../assets/branding/ragar-leafmark-light.png";
 
 function Sidebar({
+  isMobileOpen = false,
   onNewChat,
   recentThreads = [],
   currentThreadId,
@@ -21,7 +22,7 @@ function Sidebar({
   historyError = "",
 }) {
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${isMobileOpen ? "mobile-open" : ""}`}>
       <div className="sidebar-brand">
         <LogoMark className="brand-mark" />
         <div>

@@ -1,9 +1,9 @@
-import { ChevronDown, LogOut, Moon, Sun } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import LogoMark from "./LogoMark";
 
-function Header({ theme, onToggleTheme }) {
+function Header({ onMenuClick, theme, onToggleTheme }) {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -13,6 +13,14 @@ function Header({ theme, onToggleTheme }) {
 
   return (
     <header className="topbar">
+      <button
+        type="button"
+        className="mobile-menu-btn"
+        onClick={onMenuClick}
+        aria-label="Open sidebar"
+      >
+        <Menu size={20} />
+      </button>
       <div className="mobile-brand">
         <LogoMark className="mobile-logo" />
         <span>RAGar</span>

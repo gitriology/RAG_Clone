@@ -110,8 +110,7 @@ function RightPanel({ answer }) {
           <Network size={28} />
           <h2>Evidence Graph</h2>
           <p>
-            The graph returned by your backend will be surfaced here without
-            changing the RAG pipeline.
+            The graph details returned by the backend will be surfaced here.
           </p>
           <div className="metric-row">
             <span>Nodes</span>
@@ -128,10 +127,7 @@ function RightPanel({ answer }) {
         <div className="empty-panel">
           <GitBranch size={28} />
           <h2>Evidence State Vector</h2>
-          <p>
-            Backend evidence-state features can be visualized here as the next
-            UI layer.
-          </p>
+          <p>Backend evidence-state features can be visualized here.</p>
           <div className="metric-row">
             <span>Features</span>
             <strong>{answer?.evidenceState?.feature_count ?? "—"}</strong>

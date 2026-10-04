@@ -2416,3 +2416,190 @@ button {
     flex-basis: 52px;
   }
 }
+
+/* =========================================================
+   Phase 3 — mobile sidebar and retrieval details
+   Desktop/laptop styles above remain unchanged.
+   ========================================================= */
+.mobile-menu-btn,
+.sidebar-overlay,
+.mobile-retrieval-toggle {
+  display: none;
+}
+
+.mobile-retrieval-shell {
+  display: contents;
+}
+
+.mobile-retrieval-content {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    justify-content: space-between;
+  }
+
+  .mobile-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text);
+    flex: 0 0 auto;
+  }
+
+  .mobile-menu-btn:hover {
+    background: var(--panel-soft);
+  }
+
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--serif);
+    font-size: 20px;
+  }
+
+  .mobile-logo {
+    width: 27px;
+    height: 27px;
+    color: var(--accent);
+  }
+
+  /* Turn the existing sidebar into a drawer. */
+  .sidebar {
+    display: flex;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 265px;
+    flex-basis: 265px;
+    z-index: 1001;
+    transform: translateX(-105%);
+    transition: transform 220ms ease;
+    box-shadow: 16px 0 40px rgba(25, 35, 38, 0.1);
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    border: 0;
+    background: rgba(20, 28, 30, 0.28);
+    z-index: 1000;
+    cursor: pointer;
+  }
+
+  /* Restore the full sidebar contents inside the mobile drawer. */
+  .sidebar-brand > div,
+  .sidebar .nav-item span,
+  .sidebar .recent-heading,
+  .sidebar .recent-item span,
+  .sidebar .sidebar-note-copy {
+    display: block;
+  }
+
+  .sidebar-brand {
+    justify-content: flex-start;
+    padding-inline: 12px;
+  }
+
+  .sidebar .nav-item {
+    justify-content: flex-start;
+    padding-inline: 14px;
+  }
+
+  .sidebar .recent-item {
+    grid-template-columns: 18px 1fr;
+    justify-items: stretch;
+  }
+
+  .sidebar .sidebar-note {
+    padding: 18px 14px;
+    justify-content: flex-start;
+    min-height: 136px;
+  }
+
+  /* Existing right rail is hidden on small screens; its same component is
+     rendered here through the collapsible content. */
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .right-column {
+    display: block;
+    min-width: 0;
+  }
+
+  .mobile-retrieval-shell {
+    display: block;
+    width: 100%;
+  }
+
+  .mobile-retrieval-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 44px;
+    margin: 4px 0 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--panel);
+    color: var(--text);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.025);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .mobile-retrieval-toggle:hover {
+    background: var(--panel-soft);
+  }
+
+  .mobile-retrieval-chevron {
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .mobile-retrieval-content {
+    display: none;
+  }
+
+  .mobile-retrieval-content.open {
+    display: block;
+  }
+
+  .mobile-retrieval-content .right-panel {
+    display: block;
+    width: 100%;
+    margin-bottom: 10px;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    height: 58px;
+    padding: 0 12px;
+  }
+
+  .workspace-grid {
+    padding: 0 10px 10px;
+  }
+}

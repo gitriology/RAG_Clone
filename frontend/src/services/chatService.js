@@ -141,3 +141,28 @@ export async function deleteConversation(conversationId) {
 
   await deleteDoc(doc(db, "conversations", conversationId));
 }
+
+/**
+ * Builds the Firestore-safe assistant payload used to reconstruct a saved RAG answer.
+ * Undefined values are removed by addMessage/removeUndefined before the write.
+ */
+export function buildAssistantMessageData(response = {}) {
+  return {
+    role: "assistant",
+    text: response.text ?? "",
+    title: response.title,
+    confidence: response.confidence,
+    sources: response.sources,
+    pipelineVersion: response.pipelineVersion,
+    answerValid: response.answerValid,
+    retrievalConfidence: response.retrievalConfidence,
+    answerConfidence: response.answerConfidence,
+    evidenceGraph: response.evidenceGraph,
+    evidenceState: response.evidenceState,
+    agreement: response.agreement,
+    complexity: response.complexity,
+    margin: response.margin,
+    stability: response.stability,
+    recommendedTopK: response.recommendedTopK,
+  };
+}
