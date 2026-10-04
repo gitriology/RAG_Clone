@@ -55,6 +55,17 @@ export async function createConversation(userId, title = "New Query") {
   return ref.id;
 }
 
+export async function updateConversationTitle(conversationId, title) {
+  requireDb();
+
+  const safeTitle = String(title || "New Query").trim() || "New Query";
+
+  await updateDoc(doc(db, "conversations", conversationId), {
+    title: safeTitle,
+    updatedAt: serverTimestamp(),
+  });
+}
+
 export async function getUserConversations(userId) {
   requireDb();
 

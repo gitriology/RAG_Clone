@@ -2603,3 +2603,9 @@ button {
     padding: 0 10px 10px;
   }
 }
+
+/* Phase 4: conversation titles are generated in App.jsx.
+   Existing sidebar typography/layout remains unchanged. */
+.phase4-conversation-title {
+  min-width: 0;
+}

@@ -13,8 +13,46 @@ import {
   deleteConversation,
   getConversationMessages,
   getUserConversations,
+  updateConversationTitle,
 } from "./services/chatService";
 import "./App.css";
+
+function generateConversationTitle(queryText) {
+  const original = String(queryText || "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!original) return "New Query";
+
+  let title = original.replace(/[?!.]+$/g, "").trim();
+
+  const patterns = [
+    /^what\s+are\s+(?:the\s+)?(.+)$/i,
+    /^what\s+is\s+(?:the\s+)?(.+)$/i,
+    /^(?:explain|describe)\s+(?:the\s+)?(.+)$/i,
+    /^(?:tell\s+me\s+about|give\s+me\s+an?\s+overview\s+of)\s+(.+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = title.match(pattern);
+    if (match?.[1]) {
+      title = match[1].trim();
+      break;
+    }
+  }
+
+  title = title.replace(/\s+/g, " ").trim();
+  if (!title) title = original;
+
+  // Keep the sidebar title concise without cutting a word in half.
+  const MAX_LENGTH = 52;
+  if (title.length <= MAX_LENGTH) return title;
+
+  const shortened = title
+    .slice(0, MAX_LENGTH + 1)
+    .replace(/\s+\S*$/, "")
+    .trim();
+  return `${shortened || title.slice(0, MAX_LENGTH).trim()}…`;
+}
 
 function formatRelativeTime(timestamp) {
   const milliseconds =
@@ -219,12 +257,20 @@ function ResearchApp() {
     }
   };
 
-  const touchThread = (conversationId, fallbackTitle, persistent = true) => {
+  const touchThread = async (
+    conversationId,
+    fallbackTitle,
+    persistent = true,
+  ) => {
+    const generatedTitle = generateConversationTitle(fallbackTitle);
+
     setRecentThreads((prev) => {
       const existing = prev.find((thread) => thread.id === conversationId);
+      const shouldUseGeneratedTitle =
+        !existing?.title || existing.title === "New Query";
       const updated = {
         id: conversationId,
-        title: existing?.title || fallbackTitle,
+        title: shouldUseGeneratedTitle ? generatedTitle : existing.title,
         timeLabel: "Just now",
         persistent: existing?.persistent ?? persistent,
       };
@@ -234,6 +280,22 @@ function ResearchApp() {
         ...prev.filter((thread) => thread.id !== conversationId),
       ];
     });
+
+    // Legacy Phase 2/early Phase 3 conversations may still have "New Query".
+    // Upgrade only that default title; never overwrite a meaningful user title.
+    if (persistent && conversationId && !conversationId.startsWith("local-")) {
+      const existing = recentThreads.find(
+        (thread) => thread.id === conversationId,
+      );
+      if (!existing?.title || existing.title === "New Query") {
+        try {
+          await updateConversationTitle(conversationId, generatedTitle);
+        } catch (error) {
+          console.error("Could not update conversation title:", error);
+          // The RAG answer remains successful even if the title update fails.
+        }
+      }
+    }
   };
 
   const sendMessage = async () => {
@@ -253,7 +315,10 @@ function ResearchApp() {
       // Create the Firestore conversation only for the first message in a new chat.
       if (!conversationId) {
         try {
-          conversationId = await createConversation(user.uid, queryText);
+          conversationId = await createConversation(
+            user.uid,
+            generateConversationTitle(queryText),
+          );
         } catch (firestoreError) {
           // Authentication and RAG should remain usable even if Firestore is temporarily unavailable.
           console.error(
@@ -272,8 +337,7 @@ function ResearchApp() {
         setRecentThreads((prev) => [
           {
             id: conversationId,
-            title:
-              queryText.length > 34 ? `${queryText.slice(0, 31)}…` : queryText,
+            title: generateConversationTitle(queryText),
             timeLabel: "Just now",
             persistent: persistentConversation,
           },
@@ -366,7 +430,7 @@ function ResearchApp() {
         }
       }
 
-      touchThread(conversationId, queryText, persistentConversation);
+      await touchThread(conversationId, queryText, persistentConversation);
     } catch (error) {
       console.error("RAG query error:", error);
 
@@ -399,7 +463,7 @@ function ResearchApp() {
         }
       }
 
-      touchThread(conversationId, queryText, persistentConversation);
+      await touchThread(conversationId, queryText, persistentConversation);
     } finally {
       setSending(false);
     }
