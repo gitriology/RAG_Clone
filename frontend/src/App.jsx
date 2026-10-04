@@ -14,6 +14,7 @@ import {
   getConversationMessages,
   getUserConversations,
   updateConversationTitle,
+  replaceMessage,
 } from "./services/chatService";
 import "./App.css";
 
@@ -93,6 +94,7 @@ function mapStoredMessage(message) {
       id: message.id,
       type: "user",
       text: message.text || "",
+      createdAt: message.createdAt || null,
     };
   }
 
@@ -114,10 +116,44 @@ function mapStoredMessage(message) {
     margin: message.margin,
     stability: message.stability,
     recommendedTopK: message.recommendedTopK,
+    createdAt: message.createdAt || null,
+  };
+}
+
+function buildBotMessage(data, queryText, id) {
+  const evidenceGraph = data.evidence_graph || {};
+  const evidenceState = data.evidence_state || {};
+
+  return {
+    id,
+    type: "bot",
+    text: String(data.answer ?? ""),
+    title: queryText.length > 74 ? `${queryText.slice(0, 71)}…` : queryText,
+    confidence: Number(data.confidence ?? 0),
+    sources: Array.isArray(data.sources) ? data.sources : [],
+    pipelineVersion: data.pipeline_version,
+    answerValid: Boolean(data.meta?.answer_valid),
+    retrievalConfidence: Number(data.meta?.retrieval_confidence ?? 0),
+    answerConfidence: Number(data.meta?.answer_confidence ?? 0),
+    evidenceGraph: {
+      node_count: evidenceGraph.node_count,
+      edge_count: evidenceGraph.edge_count,
+    },
+    evidenceState: {
+      feature_count: evidenceState.feature_count,
+      evidence_score: evidenceState.evidence_score,
+    },
+    agreement: data.meta?.answer_agreement,
+    complexity: evidenceState.complexity,
+    margin: evidenceState.margin,
+    stability: evidenceState.stability,
+    recommendedTopK: evidenceState.recommended_top_k,
+    createdAt: new Date(),
   };
 }
 
 function ResearchApp() {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const { user, loading } = useAuth();
 
@@ -130,6 +166,7 @@ function ResearchApp() {
   const [conversationLoading, setConversationLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [sending, setSending] = useState(false);
+  const [regeneratingMessageId, setRegeneratingMessageId] = useState(null);
 
   const [theme, setTheme] = useState(
     () => localStorage.getItem("ragar-theme") || "light",
@@ -298,6 +335,63 @@ function ResearchApp() {
     }
   };
 
+  const regenerateMessage = async (message, sourceQuery) => {
+    const queryText = String(sourceQuery || "").trim();
+    const conversationId = currentThreadIdRef.current;
+
+    if (
+      !queryText ||
+      !message?.id ||
+      !user?.uid ||
+      sending ||
+      conversationLoading ||
+      regeneratingMessageId
+    ) {
+      return;
+    }
+
+    setRegeneratingMessageId(message.id);
+    setHistoryError("");
+
+    try {
+      const data = await sendQuery(queryText, {
+        topKDocuments: 5,
+        maxSentences: 3,
+      });
+
+      const regenerated = buildBotMessage(data, queryText, message.id);
+      setMessages((prev) =>
+        prev.map((item) => (item.id === message.id ? regenerated : item)),
+      );
+
+      if (conversationId && !conversationId.startsWith("local-")) {
+        try {
+          await replaceMessage(
+            conversationId,
+            message.id,
+            buildAssistantMessageData(regenerated),
+          );
+        } catch (firestoreError) {
+          console.error(
+            "Could not replace regenerated response:",
+            firestoreError,
+          );
+          setHistoryError(
+            "The regenerated answer is available, but the updated response could not be saved to history.",
+          );
+        }
+      }
+    } catch (error) {
+      console.error("Regeneration failed:", error);
+      setHistoryError(
+        error?.response?.data?.detail ||
+          "Could not regenerate this answer. The previous answer was kept.",
+      );
+    } finally {
+      setRegeneratingMessageId(null);
+    }
+  };
+
   const sendMessage = async () => {
     const queryText = input.trim();
 
@@ -352,6 +446,7 @@ function ResearchApp() {
           id: `${requestId}-user`,
           type: "user",
           text: queryText,
+          createdAt: new Date(),
         },
         {
           id: `${requestId}-loading`,
@@ -380,34 +475,7 @@ function ResearchApp() {
         maxSentences: 3,
       });
 
-      const evidenceGraph = data.evidence_graph || {};
-      const evidenceState = data.evidence_state || {};
-
-      const botMsg = {
-        id: `${requestId}-assistant`,
-        type: "bot",
-        text: String(data.answer ?? ""),
-        title: queryText.length > 74 ? `${queryText.slice(0, 71)}…` : queryText,
-        confidence: Number(data.confidence ?? 0),
-        sources: Array.isArray(data.sources) ? data.sources : [],
-        pipelineVersion: data.pipeline_version,
-        answerValid: Boolean(data.meta?.answer_valid),
-        retrievalConfidence: Number(data.meta?.retrieval_confidence ?? 0),
-        answerConfidence: Number(data.meta?.answer_confidence ?? 0),
-        evidenceGraph: {
-          node_count: evidenceGraph.node_count,
-          edge_count: evidenceGraph.edge_count,
-        },
-        evidenceState: {
-          feature_count: evidenceState.feature_count,
-          evidence_score: evidenceState.evidence_score,
-        },
-        agreement: data.meta?.answer_agreement,
-        complexity: evidenceState.complexity,
-        margin: evidenceState.margin,
-        stability: evidenceState.stability,
-        recommendedTopK: evidenceState.recommended_top_k,
-      };
+      const botMsg = buildBotMessage(data, queryText, `${requestId}-assistant`);
 
       // Always show the RAG answer, even if the history write fails.
       setMessages((prev) =>
@@ -421,7 +489,17 @@ function ResearchApp() {
           // Store only the metadata needed to reconstruct the UI.
           // The full evidence graph is intentionally not stored because Firestore
           // documents have a 1 MiB size limit.
-          await addMessage(conversationId, buildAssistantMessageData(botMsg));
+          const savedAssistantId = await addMessage(
+            conversationId,
+            buildAssistantMessageData(botMsg),
+          );
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === botMsg.id
+                ? { ...message, id: savedAssistantId }
+                : message,
+            ),
+          );
         } catch (firestoreError) {
           console.error("Could not save assistant message:", firestoreError);
           setHistoryError(
@@ -482,7 +560,9 @@ function ResearchApp() {
   return (
     <div className={appClass}>
       <Sidebar
+        isOpen={sidebarOpen}
         isMobileOpen={mobileSidebarOpen}
+        onClose={() => setMobileSidebarOpen(false)}
         onNewChat={newChat}
         recentThreads={recentThreads}
         currentThreadId={currentThreadId}
@@ -503,25 +583,42 @@ function ResearchApp() {
 
       <div className="main-area">
         <Header
-          onMenuClick={() => setMobileSidebarOpen((open) => !open)}
+          onMenuClick={() => {
+            if (window.matchMedia("(max-width: 768px)").matches) {
+              setMobileSidebarOpen((open) => !open);
+            } else {
+              setSidebarOpen((open) => !open);
+            }
+          }}
+          sidebarOpen={sidebarOpen}
           theme={theme}
           onToggleTheme={() =>
             setTheme((value) => (value === "dark" ? "light" : "dark"))
           }
         />
 
-        <InputBox
-          input={input}
-          setInput={setInput}
-          sendMessage={sendMessage}
-          disabled={historyLoading || conversationLoading || sending}
-        />
-
         {conversationLoading && (
           <div className="conversation-loading">Loading conversation…</div>
         )}
 
-        <ChatWindow messages={messages} chatEndRef={chatEndRef} />
+        <ChatWindow
+          messages={messages}
+          chatEndRef={chatEndRef}
+          onRegenerate={regenerateMessage}
+          regeneratingMessageId={regeneratingMessageId}
+        />
+
+        <InputBox
+          input={input}
+          setInput={setInput}
+          sendMessage={sendMessage}
+          disabled={
+            historyLoading ||
+            conversationLoading ||
+            sending ||
+            Boolean(regeneratingMessageId)
+          }
+        />
       </div>
     </div>
   );

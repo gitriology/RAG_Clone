@@ -7,6 +7,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -110,6 +111,28 @@ export async function addMessage(conversationId, message) {
   });
 
   return messageRef.id;
+}
+
+export async function replaceMessage(conversationId, messageId, message) {
+  requireDb();
+
+  const safeMessage = removeUndefined(message);
+  const messageRef = doc(
+    db,
+    "conversations",
+    conversationId,
+    "messages",
+    messageId,
+  );
+
+  await setDoc(messageRef, {
+    ...safeMessage,
+    createdAt: serverTimestamp(),
+  });
+
+  await updateDoc(doc(db, "conversations", conversationId), {
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function getConversationMessages(conversationId) {

@@ -1,7 +1,15 @@
-import { Bot, Check, Copy, RotateCcw, Share2 } from "lucide-react";
+import { Check, Copy, RotateCcw, Sparkles } from "lucide-react";
 import { useState } from "react";
+import RightPanel from "./RightPanel";
 
-function MessageBubble({ msg }) {
+function MessageBubble({
+  msg,
+  sourceQuery = "",
+  detailsOpen = false,
+  onToggleDetails,
+  onRegenerate,
+  regenerating = false,
+}) {
   const [copied, setCopied] = useState(false);
   const isUser = msg.type === "user";
 
@@ -16,7 +24,7 @@ function MessageBubble({ msg }) {
   if (msg.loading) {
     return (
       <div className="assistant-loading">
-        <Bot size={17} />
+        <Sparkles size={17} />
         <span />
         <span />
         <span />
@@ -34,11 +42,15 @@ function MessageBubble({ msg }) {
     }
   };
 
+  const handleDetails = () => {
+    onToggleDetails?.(msg.id);
+  };
+
   return (
     <article className="answer-card">
       <div className="answer-header">
         <div className="answer-label">
-          <Bot size={17} />
+          <Sparkles size={17} />
           <span>Final Answer</span>
           <span className="enhanced-badge">
             <span />
@@ -77,16 +89,39 @@ function MessageBubble({ msg }) {
       </div>
 
       <div className="answer-actions">
-        <button onClick={copyAnswer}>
-          {copied ? <Check size={15} /> : <Copy size={15} />}{" "}
+        <button type="button" onClick={copyAnswer} disabled={regenerating}>
+          {copied ? <Check size={15} /> : <Copy size={15} />}
           {copied ? "Copied" : "Copy"}
         </button>
-        <button>
-          <RotateCcw size={15} /> Regenerate
+
+        <button
+          type="button"
+          onClick={() => onRegenerate?.(msg, sourceQuery)}
+          disabled={regenerating || !sourceQuery}
+        >
+          <RotateCcw size={15} />
+          {regenerating ? "Regenerating…" : "Regenerate"}
         </button>
-        <button>
-          <Share2 size={15} /> Share
+
+        <button
+          type="button"
+          className={`details-action ${detailsOpen ? "selected" : ""}`}
+          onClick={handleDetails}
+          disabled={regenerating}
+          aria-expanded={detailsOpen}
+        >
+          <Sparkles size={15} />
+          Details {detailsOpen ? "−" : "+"}
         </button>
+      </div>
+
+      {/* Mobile: the same response-specific details can be opened independently.
+          Multiple answer cards may remain open at once. */}
+      <div
+        className={`message-details-mobile ${detailsOpen ? "open" : ""}`}
+        aria-hidden={!detailsOpen}
+      >
+        {detailsOpen && <RightPanel answer={msg} />}
       </div>
 
       {msg.confidence !== undefined && (

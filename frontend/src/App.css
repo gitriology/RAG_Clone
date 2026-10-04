@@ -2609,3 +2609,483 @@ button {
 .phase4-conversation-title {
   min-width: 0;
 }
+
+/* =========================================================
+   Phase 5 — bottom query composer + per-response details
+   These overrides intentionally preserve the existing desktop
+   visual styling while changing only the requested behavior.
+   ========================================================= */
+
+.main-area {
+  min-height: 0;
+}
+
+.main-area > .workspace-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.main-area > .query-bar-wrap {
+  flex: 0 0 auto;
+  order: 3;
+}
+
+/* The composer is now below the scrollable workspace. */
+.query-bar-wrap {
+  padding: 10px 26px 18px;
+}
+
+.message-details-mobile {
+  display: none;
+}
+
+.details-action.selected {
+  color: var(--accent) !important;
+}
+
+@media (max-width: 768px) {
+  /* The right desktop rail is replaced by details attached to each answer. */
+  .right-column {
+    display: none !important;
+  }
+
+  .message-details-mobile {
+    display: none;
+    border-top: 1px solid var(--line);
+    margin-top: 0;
+    padding: 0;
+  }
+
+  .message-details-mobile.open {
+    display: block;
+  }
+
+  .message-details-mobile .right-panel {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .message-details-mobile .panel-content {
+    height: auto;
+    max-height: 52vh;
+    overflow-y: auto;
+  }
+
+  .message-details-mobile .panel-tabs {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .message-details-mobile .panel-tabs button {
+    min-height: 43px;
+  }
+
+  .main-area > .query-bar-wrap {
+    padding: 8px 12px 12px;
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+  }
+
+  .query-bar {
+    max-width: none;
+  }
+}
+
+/* =========================================================
+   Phase 5.1 — professional workspace behavior
+   These overrides are intentionally isolated at the end so
+   the existing visual design remains intact.
+   ========================================================= */
+
+/* The app owns the viewport; only the intended content areas scroll. */
+html,
+body,
+#root {
+  height: 100%;
+  min-height: 100%;
+  overflow: hidden;
+}
+
+.app-shell {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.main-area {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.topbar {
+  flex: 0 0 62px;
+  min-height: 62px;
+  justify-content: space-between;
+}
+
+.sidebar {
+  height: 100vh;
+  min-height: 0;
+  max-height: 100vh;
+  overflow: hidden;
+  transition:
+    width 220ms ease,
+    flex-basis 220ms ease,
+    padding 220ms ease,
+    border-color 220ms ease;
+}
+
+.sidebar.sidebar-closed {
+  width: 0;
+  flex-basis: 0;
+  padding-left: 0;
+  padding-right: 0;
+  border-right-color: transparent;
+  overflow: hidden;
+}
+
+.sidebar.sidebar-closed > * {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.recent-list {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  padding-right: 2px;
+}
+
+.sidebar-note {
+  flex: 0 0 auto;
+}
+
+/* Main conversation area is the independent vertical scroll. */
+.main-area > .workspace-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-column {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+
+/* Query composer stays pinned beneath the scrollable conversation. */
+.main-area > .query-bar-wrap {
+  flex: 0 0 auto;
+  order: 3;
+  position: relative;
+  z-index: 5;
+  background: var(--bg);
+  padding-top: 10px;
+  padding-bottom: 16px;
+}
+
+/* Desktop sidebar toggle is always available. */
+.sidebar-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  flex: 0 0 auto;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--panel-soft);
+}
+
+/* Closed desktop details state: no response is opened until Details is clicked. */
+.right-column.details-closed {
+  display: block;
+  min-height: 0;
+}
+
+.details-empty-state {
+  height: 100%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 36px;
+  text-align: center;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.details-empty-icon {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.details-empty-state h2 {
+  margin: 0 0 7px;
+  font-family: var(--serif);
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.details-empty-state p {
+  max-width: 280px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.desktop-details-stack {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.desktop-detail-card {
+  flex: 0 0 auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.desktop-detail-heading {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.desktop-detail-heading span,
+.desktop-detail-heading strong {
+  display: block;
+}
+
+.desktop-detail-heading span {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.desktop-detail-heading strong {
+  max-width: 330px;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.desktop-detail-close {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.desktop-detail-close:hover {
+  background: var(--panel-soft);
+  color: var(--text);
+}
+
+/* Remove the old mobile-only "latest response" behavior. */
+.message-details-mobile {
+  display: none;
+}
+
+.details-action.selected {
+  color: var(--accent) !important;
+}
+
+/* The action row now has only Copy / Regenerate / Details. */
+.answer-actions {
+  gap: 19px;
+}
+
+/* Mobile drawer and per-response details. */
+@media (max-width: 768px) {
+  .app-shell,
+  .main-area {
+    height: 100vh;
+    min-height: 0;
+  }
+
+  .topbar {
+    flex: 0 0 58px;
+    min-height: 58px;
+    height: 58px;
+    padding: 0 12px;
+  }
+
+  .sidebar-toggle-btn {
+    width: 38px;
+    height: 38px;
+  }
+
+  .sidebar {
+    height: 100vh;
+    max-height: 100vh;
+    width: 265px;
+    flex-basis: 265px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 1001;
+    transform: translateX(-105%);
+    transition: transform 220ms ease;
+    box-shadow: 16px 0 40px rgba(25, 35, 38, 0.1);
+  }
+
+  .sidebar.sidebar-closed {
+    width: 265px;
+    flex-basis: 265px;
+    padding-left: 14px;
+    padding-right: 14px;
+    border-right-color: var(--line);
+    transform: translateX(-105%);
+  }
+
+  .sidebar.sidebar-open {
+    transform: translateX(-105%);
+  }
+
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    padding: 0;
+    border: 0;
+    background: rgba(20, 28, 30, 0.28);
+    z-index: 1000;
+    cursor: pointer;
+  }
+
+  .mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--serif);
+    font-size: 20px;
+  }
+
+  .mobile-logo {
+    width: 27px;
+    height: 27px;
+    color: var(--accent);
+  }
+
+  .workspace-grid {
+    grid-template-columns: 1fr;
+    padding: 0 10px 10px;
+  }
+
+  .right-column {
+    display: none !important;
+  }
+
+  .main-area > .query-bar-wrap {
+    padding: 8px 12px 12px;
+  }
+
+  .chat-column {
+    padding-bottom: 12px;
+  }
+
+  .message-details-mobile {
+    display: none;
+    border-top: 1px solid var(--line);
+    margin-top: 0;
+    padding: 0;
+  }
+
+  .message-details-mobile.open {
+    display: block;
+  }
+
+  .message-details-mobile .right-panel {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .message-details-mobile .panel-content {
+    height: auto;
+    max-height: 52vh;
+    overflow-y: auto;
+  }
+
+  .message-details-mobile .panel-tabs {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .message-details-mobile .panel-tabs button {
+    min-height: 43px;
+  }
+
+  .desktop-details-stack {
+    overflow: visible;
+  }
+}
+
+/* At larger desktop widths, preserve the established visual proportions. */
+@media (min-width: 769px) {
+  .mobile-menu-btn {
+    display: none !important;
+  }
+}

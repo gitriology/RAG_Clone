@@ -12,7 +12,9 @@ import darkLeaf from "../assets/branding/ragar-leafmark-dark.png";
 import lightLeaf from "../assets/branding/ragar-leafmark-light.png";
 
 function Sidebar({
+  isOpen = true,
   isMobileOpen = false,
+  onClose,
   onNewChat,
   recentThreads = [],
   currentThreadId,
@@ -21,8 +23,16 @@ function Sidebar({
   historyLoading = false,
   historyError = "",
 }) {
+  const sidebarClass = [
+    "sidebar",
+    isOpen ? "sidebar-open" : "sidebar-closed",
+    isMobileOpen ? "mobile-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <aside className={`sidebar ${isMobileOpen ? "mobile-open" : ""}`}>
+    <aside className={sidebarClass}>
       <div className="sidebar-brand">
         <LogoMark className="brand-mark" />
         <div>
@@ -77,13 +87,18 @@ function Sidebar({
         ) : (
           recentThreads.map((thread) => (
             <div
-              className={`recent-item-wrap ${currentThreadId === thread.id ? "selected" : ""}`}
+              className={`recent-item-wrap ${
+                currentThreadId === thread.id ? "selected" : ""
+              }`}
               key={thread.id}
             >
               <button
                 className="recent-item"
                 type="button"
-                onClick={() => onSelectThread(thread.id)}
+                onClick={() => {
+                  onSelectThread(thread.id);
+                  onClose?.();
+                }}
                 disabled={thread.loading}
               >
                 <MessageSquare size={13} />

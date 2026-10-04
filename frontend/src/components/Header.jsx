@@ -1,9 +1,17 @@
-import { ChevronDown, LogOut, Menu, Moon, Sun } from "lucide-react";
+import {
+  ChevronDown,
+  LogOut,
+  Menu,
+  Moon,
+  Sun,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import LogoMark from "./LogoMark";
 
-function Header({ onMenuClick, theme, onToggleTheme }) {
+function Header({ onMenuClick, sidebarOpen, theme, onToggleTheme }) {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -15,16 +23,23 @@ function Header({ onMenuClick, theme, onToggleTheme }) {
     <header className="topbar">
       <button
         type="button"
-        className="mobile-menu-btn"
+        className="sidebar-toggle-btn"
         onClick={onMenuClick}
-        aria-label="Open sidebar"
+        aria-label={sidebarOpen ? "Collapse sidebar" : "Open sidebar"}
+        title={sidebarOpen ? "Collapse sidebar" : "Open sidebar"}
       >
-        <Menu size={20} />
+        {sidebarOpen ? (
+          <PanelLeftClose size={19} />
+        ) : (
+          <PanelLeftOpen size={19} />
+        )}
       </button>
+
       <div className="mobile-brand">
         <LogoMark className="mobile-logo" />
         <span>RAGar</span>
       </div>
+
       <div className="topbar-actions">
         <button
           className="icon-button"
@@ -33,6 +48,7 @@ function Header({ onMenuClick, theme, onToggleTheme }) {
         >
           {theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}
         </button>
+
         <div className="user-menu-wrap">
           <button
             className="user-button"
@@ -48,6 +64,7 @@ function Header({ onMenuClick, theme, onToggleTheme }) {
             </span>
             <ChevronDown size={15} />
           </button>
+
           {menuOpen && (
             <div className="user-menu">
               <div className="user-menu-meta">
