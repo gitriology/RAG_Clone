@@ -108,6 +108,9 @@ function mapStoredMessage(message) {
     pipelineVersion: message.pipelineVersion,
     answerValid: Boolean(message.answerValid),
     retrievalConfidence: Number(message.retrievalConfidence ?? 0),
+    pipelineConfidence: Number(
+      message.pipelineConfidence ?? message.confidence ?? 0,
+    ),
     answerConfidence: Number(message.answerConfidence ?? 0),
     evidenceGraph: message.evidenceGraph || {},
     evidenceState: message.evidenceState || {},
@@ -116,6 +119,10 @@ function mapStoredMessage(message) {
     margin: message.margin,
     stability: message.stability,
     recommendedTopK: message.recommendedTopK,
+    retrievalQueries: Array.isArray(message.retrievalQueries)
+      ? message.retrievalQueries
+      : [],
+    multiQuery: Boolean(message.multiQuery),
     createdAt: message.createdAt || null,
   };
 }
@@ -133,7 +140,15 @@ function buildBotMessage(data, queryText, id) {
     sources: Array.isArray(data.sources) ? data.sources : [],
     pipelineVersion: data.pipeline_version,
     answerValid: Boolean(data.meta?.answer_valid),
-    retrievalConfidence: Number(data.meta?.retrieval_confidence ?? 0),
+    retrievalConfidence: Number(
+      data.retrieval_confidence ?? data.meta?.retrieval_confidence ?? 0,
+    ),
+    pipelineConfidence: Number(
+      data.pipeline_confidence ??
+        data.meta?.pipeline_confidence ??
+        data.confidence ??
+        0,
+    ),
     answerConfidence: Number(data.meta?.answer_confidence ?? 0),
     evidenceGraph: {
       node_count: evidenceGraph.node_count,
@@ -143,13 +158,32 @@ function buildBotMessage(data, queryText, id) {
       feature_count: evidenceState.feature_count,
       evidence_score: evidenceState.evidence_score,
     },
-    agreement: data.meta?.answer_agreement,
-    complexity: evidenceState.complexity,
-    margin: evidenceState.margin,
-    stability: evidenceState.stability,
-    recommendedTopK: evidenceState.recommended_top_k,
+    agreement: data.retrieval_state?.agreement ?? data.meta?.agreement,
+    complexity: data.retrieval_state?.complexity ?? data.meta?.complexity,
+    margin: data.retrieval_state?.margin ?? data.meta?.margin,
+    stability: data.retrieval_state?.stability ?? data.meta?.stability,
+    recommendedTopK:
+      data.retrieval_state?.recommended_top_k ?? data.meta?.recommended_top_k,
+    retrievalQueries: Array.isArray(data.meta?.search_queries)
+      ? data.meta.search_queries
+      : [queryText],
+    multiQuery: Boolean(data.meta?.multi_query),
     createdAt: new Date(),
   };
+}
+
+function buildConversationHistory(messages, limit = 6) {
+  return messages
+    .filter(
+      (message) =>
+        (message.type === "user" || message.type === "bot") && !message.loading,
+    )
+    .map((message) => ({
+      role: message.type === "user" ? "user" : "assistant",
+      text: String(message.text || "").slice(0, 1200),
+    }))
+    .filter((message) => message.text.trim())
+    .slice(-limit);
 }
 
 function ResearchApp() {
@@ -354,9 +388,23 @@ function ResearchApp() {
     setHistoryError("");
 
     try {
+      const targetIndex = messages.findIndex((item) => item.id === message.id);
+      const sourceUserIndex =
+        targetIndex >= 0
+          ? messages
+              .slice(0, targetIndex)
+              .map((item, index) => ({ item, index }))
+              .reverse()
+              .find(({ item }) => item.type === "user")?.index
+          : -1;
+      const conversationHistory = buildConversationHistory(
+        sourceUserIndex >= 0 ? messages.slice(0, sourceUserIndex) : [],
+      );
+
       const data = await sendQuery(queryText, {
         topKDocuments: 5,
         maxSentences: 3,
+        conversationHistory,
       });
 
       const regenerated = buildBotMessage(data, queryText, message.id);
@@ -469,10 +517,13 @@ function ResearchApp() {
         }
       }
 
-      // Existing FastAPI RAG pipeline remains unchanged.
+      // Send the recent in-memory conversation so the backend can resolve
+      // follow-up references and plan independent multi-topic retrievals.
+      const conversationHistory = buildConversationHistory(messages);
       const data = await sendQuery(queryText, {
         topKDocuments: 5,
         maxSentences: 3,
+        conversationHistory,
       });
 
       const botMsg = buildBotMessage(data, queryText, `${requestId}-assistant`);

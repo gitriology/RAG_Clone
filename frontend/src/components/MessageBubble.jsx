@@ -1,5 +1,11 @@
 import { Check, Copy, RotateCcw, Sparkles } from "lucide-react";
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
+import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import "katex/dist/katex.min.css";
 import RightPanel from "./RightPanel";
 
 function MessageBubble({
@@ -61,31 +67,15 @@ function MessageBubble({
 
       <div className="answer-content">
         <h1>{msg.title || "Research Answer"}</h1>
-        <p className="answer-lead">{msg.text}</p>
 
-        {msg.sections?.map((section, index) => (
-          <section className="answer-section" key={`${section.title}-${index}`}>
-            <div className="section-number">{index + 1}</div>
-            <div>
-              <h2>{section.title}</h2>
-              <ul>
-                {section.points.map((point) => (
-                  <li key={point}>{point}</li>
-                ))}
-              </ul>
-            </div>
-          </section>
-        ))}
-
-        {msg.summary && (
-          <div className="summary-card">
-            <div className="summary-icon">✦</div>
-            <div>
-              <h3>In Summary</h3>
-              <p>{msg.summary}</p>
-            </div>
-          </div>
-        )}
+        <div className="answer-markdown">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMath]}
+            rehypePlugins={[rehypeKatex, rehypeHighlight]}
+          >
+            {msg.text || ""}
+          </ReactMarkdown>
+        </div>
       </div>
 
       <div className="answer-actions">
@@ -115,8 +105,6 @@ function MessageBubble({
         </button>
       </div>
 
-      {/* Mobile: the same response-specific details can be opened independently.
-          Multiple answer cards may remain open at once. */}
       <div
         className={`message-details-mobile ${detailsOpen ? "open" : ""}`}
         aria-hidden={!detailsOpen}

@@ -1,8 +1,9 @@
 import axios from "axios";
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || ""
-).replace(/\/$/, "");
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(
+  /\/$/,
+  "",
+);
 
 const API_URL = `${API_BASE_URL}/api/query`;
 const HEALTH_URL = `${API_BASE_URL}/api/health`;
@@ -16,7 +17,7 @@ const config = {
 
 export const sendQuery = async (
   query,
-  { topKDocuments = 5, maxSentences = 3 } = {}
+  { topKDocuments = 5, maxSentences = 3, conversationHistory = [] } = {},
 ) => {
   const res = await axios.post(
     API_URL,
@@ -24,8 +25,9 @@ export const sendQuery = async (
       query,
       top_k_documents: topKDocuments,
       max_sentences: maxSentences,
+      conversation_history: conversationHistory,
     },
-    config
+    config,
   );
   return res.data;
 };

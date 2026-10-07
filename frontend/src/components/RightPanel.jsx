@@ -10,8 +10,15 @@ import { useState } from "react";
 function RightPanel({ answer }) {
   const [tab, setTab] = useState("Retrieval");
   const sources = answer?.sources || [];
-  const retrievalConfidence =
-    answer?.retrievalConfidence ?? answer?.confidence ?? 0;
+  // Pipeline confidence is the final end-to-end confidence after retrieval,
+  // evidence/context validation, and answer validation. It is the better
+  // single headline confidence for the user-facing UI. Retrieval confidence
+  // remains available in the underlying response for diagnostics.
+  const pipelineConfidence =
+    answer?.pipelineConfidence ?? answer?.confidence ?? 0;
+  const retrievalQueries = Array.isArray(answer?.retrievalQueries)
+    ? answer.retrievalQueries.filter(Boolean)
+    : [];
 
   return (
     <aside className="right-panel">
@@ -33,8 +40,22 @@ function RightPanel({ answer }) {
             <h2>
               Retrieved Documents <span>(Top-K)</span>
             </h2>
-            <span>{sources.length || 0} sources</span>
+            <span>
+              {sources.length || 0} sources
+              {retrievalQueries.length > 1
+                ? ` · ${retrievalQueries.length} retrieval passes`
+                : ""}
+            </span>
           </div>
+          {retrievalQueries.length > 1 && (
+            <div className="retrieval-query-summary">
+              {retrievalQueries.map((query, index) => (
+                <span key={`${query}-${index}`}>
+                  {index + 1}. {query}
+                </span>
+              ))}
+            </div>
+          )}
           <div className="source-list">
             {(sources.length ? sources : ["No sources returned yet"]).map(
               (source, index) => (
@@ -76,7 +97,11 @@ function RightPanel({ answer }) {
               </div>
               <div>
                 <span>Complexity</span>
-                <strong>{answer?.complexity || "—"}</strong>
+                <strong>
+                  {answer?.complexity != null
+                    ? Number(answer.complexity).toFixed(2)
+                    : "—"}
+                </strong>
               </div>
               <div>
                 <span>Margin</span>
@@ -88,7 +113,11 @@ function RightPanel({ answer }) {
               </div>
               <div>
                 <span>Stability</span>
-                <strong>{answer?.stability || "—"}</strong>
+                <strong>
+                  {answer?.stability != null
+                    ? Number(answer.stability).toFixed(2)
+                    : "—"}
+                </strong>
               </div>
               <div>
                 <span>Recommended Top-K</span>
@@ -97,8 +126,8 @@ function RightPanel({ answer }) {
                 </strong>
               </div>
               <div>
-                <span>Retrieval Confidence</span>
-                <strong>{Number(retrievalConfidence).toFixed(2)}</strong>
+                <span>Pipeline Confidence</span>
+                <strong>{Number(pipelineConfidence).toFixed(2)}</strong>
               </div>
             </div>
           </div>

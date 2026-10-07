@@ -190,6 +190,7 @@ export function buildAssistantMessageData(response = {}) {
     pipelineVersion: response.pipelineVersion,
     answerValid: response.answerValid,
     retrievalConfidence: response.retrievalConfidence,
+    pipelineConfidence: response.pipelineConfidence,
     answerConfidence: response.answerConfidence,
     evidenceGraph: response.evidenceGraph,
     evidenceState: response.evidenceState,
@@ -198,5 +199,7 @@ export function buildAssistantMessageData(response = {}) {
     margin: response.margin,
     stability: response.stability,
     recommendedTopK: response.recommendedTopK,
+    retrievalQueries: response.retrievalQueries,
+    multiQuery: response.multiQuery,
   };
 }

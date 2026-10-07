@@ -52,12 +52,12 @@ function Sidebar({
           <span>New Query</span>
         </button>
 
-        <button className="nav-item" type="button">
+        {/* <button className="nav-item" type="button">
           <Database size={19} />
           <span>Knowledge Base</span>
-        </button>
+        </button> */}
 
-        <button className="nav-item" type="button">
+        {/* <button className="nav-item" type="button">
           <img
             className="graphs-nav-icon"
             src={graphIcon}
@@ -65,7 +65,7 @@ function Sidebar({
             aria-hidden="true"
           />
           <span>Graphs</span>
-        </button>
+        </button> */}
 
         <button className="nav-item" type="button">
           <Settings2 size={19} />

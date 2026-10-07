@@ -11,3 +11,5 @@ tqdm
 spacy
 scikit-learn
 networkx
+groq
+python-dotenv

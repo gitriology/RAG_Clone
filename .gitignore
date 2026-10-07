@@ -74,3 +74,7 @@ data/raw/
 .DS_Store
 Thumbs.db
 frontend/.env.local
+# Local backend secrets
+.env
+.env.*
+!.env.example

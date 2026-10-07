@@ -1882,6 +1882,26 @@ def run_pipeline(
             retrieval_confidence
         ),
 
+        # ==================================================
+        # MS-ARC Retrieval State
+        # ==================================================
+        # These are the actual retrieval-stage signals. They are kept separate
+        # from answer validation confidence so the UI does not accidentally
+        # label answer agreement as retrieval agreement.
+        "retrieval_state": {
+            "agreement": safe_float(retrieval_state.signals.agreement.score),
+            "complexity": safe_float(retrieval_state.query_complexity),
+            "margin": safe_float(retrieval_state.signals.margin.normalized_margin),
+            "stability": safe_float(retrieval_state.signals.stability.score),
+            "recommended_top_k": safe_int(retrieval_state.recommended_topk),
+            "retrieval_confidence": safe_float(retrieval_state.retrieval_confidence),
+            "query_type": str(retrieval_state.query_type or ""),
+            "decision": str(retrieval_state.decision or ""),
+            "decision_reason": str(
+                getattr(retrieval_state.signals.decision, "reason", "") or ""
+            ),
+        },
+
         "answer_confidence": (
             answer_confidence
         ),
@@ -1925,6 +1945,24 @@ def run_pipeline(
         # ==================================================
 
         "selected_evidence": selected_evidence,
+
+        # ==================================================
+        # LLM GROUNDING CONTEXT
+        # ==================================================
+        # Preserve the already-selected final context documents for the optional
+        # LLM synthesis layer. This is a serialization-only addition: retrieval,
+        # reranking, evidence selection, graph construction, and state scoring
+        # are unchanged.
+        "llm_context_documents": [
+            {
+                "doc_id": get_document_value(doc, "doc_id", ""),
+                "source": get_document_value(doc, "source", "unknown"),
+                "domain": get_document_value(doc, "domain", "general"),
+                "text": str(get_document_value(doc, "text", "") or "").strip(),
+            }
+            for doc in top_docs
+            if str(get_document_value(doc, "text", "") or "").strip()
+        ],
 
         "candidate_sentences": generation.get(
             "candidate_sentences",
