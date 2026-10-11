@@ -1,4 +1,4 @@
-# RAGar — MS-ARC: Adaptive Multi-State Retrieval with Evidence Graph Reasoning
+# RAGar — MS-ARC: Adaptive Multi-State Retrieval with Evidence Graph Reasoning  (https://rag-clone.vercel.app/)
 
 A secure, domain-adaptive, offline-capable **Retrieval-Augmented Generation (RAG)** framework built around a
 **Multi-State Adaptive Retrieval Controller (MS-ARC)**. Instead of retrieving a fixed Top-K for every query,
