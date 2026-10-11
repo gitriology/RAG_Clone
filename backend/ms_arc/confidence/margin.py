@@ -7,6 +7,8 @@ from backend.ms_arc.state.retrieval_signals import (
 )
 
 from backend.models.model_registry import ModelRegistry
+import math
+from time import perf_counter
 
 
 def compute_margin(
@@ -33,6 +35,7 @@ def compute_margin(
         else:
             doc.rerank_score = float(cached)
 
+    rerank_started = perf_counter()
     if missing_pairs:
         model = ModelRegistry.get_reranker_model()
 
@@ -66,8 +69,13 @@ def compute_margin(
     )
 
     raw_margin = top_score - second_score
-    epsilon = 1e-8
-    normalized_margin = raw_margin / (abs(top_score) + epsilon)
+
+    # CrossEncoder outputs are ranking logits, not probabilities. A ratio
+    # against abs(top_score) is unstable near zero and score magnitudes can be
+    # negative. Map the non-negative logit gap through a saturating transform:
+    # 1 - exp(-gap). Small gaps stay small; large gaps approach 1.
+    normalized_margin = -math.expm1(-max(0.0, raw_margin))
+    normalized_margin = max(0.0, min(1.0, normalized_margin))
 
     state.signals.margin = MarginMetrics(
         top_score=top_score,
@@ -79,5 +87,7 @@ def compute_margin(
     state.debug["rerank_new_scores"] = len(missing_pairs)
     state.debug["rerank_reused_scores"] = len(state.selected_documents) - len(missing_pairs)
     state.debug["rerank_total_cached_scores"] = len(score_cache)
+    state.debug["reranking_stage_seconds"] = perf_counter() - rerank_started
+    state.debug["reranking_candidate_count"] = len(state.selected_documents)
 
     return state

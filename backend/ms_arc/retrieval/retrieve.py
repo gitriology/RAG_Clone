@@ -421,7 +421,14 @@ def retrieve(
         candidate_k=candidate_k,
 
         fusion_method=fusion_method,
+
+        return_candidates=True,
     )
+
+    state.debug["hybrid_stage_timings_seconds"] = dict(results.get("stage_timings_seconds", {}))
+    state.debug["embedding_cache_status"] = results.get("embedding_cache_status", "unknown")
+    state.debug["hybrid_candidate_count"] = int(results.get("candidate_count", len(results.get("merged_results", []))))
+    state.debug["embedding_cache_diagnostics"] = results.get("cache_diagnostics", {})
 
     dense_docs = []
 

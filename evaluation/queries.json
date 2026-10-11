@@ -1,0 +1,106 @@
+[
+  {
+    "query": "What is a semaphore?",
+    "relevant_documents": ["os.pdf"],
+    "topics": [
+      {
+        "name": "semaphore",
+        "relevant_documents": ["os.pdf"]
+      }
+    ]
+  },
+  {
+    "query": "What is DBMS?",
+    "relevant_documents": ["dbms.pdf"]
+  },
+  {
+    "query": "What are the types of normalization?",
+    "relevant_documents": ["dbms.pdf"]
+  },
+  {
+    "query": "Give SQL syntax for GROUP BY",
+    "relevant_documents": ["dbms.pdf"]
+  },
+  {
+    "query": "What is a primary key?",
+    "relevant_documents": ["dbms.pdf"]
+  },
+  {
+    "query": "What are the types of semaphores?",
+    "relevant_documents": ["os.pdf"]
+  },
+  {
+    "query": "Explain process synchronization",
+    "relevant_documents": ["os.pdf", "parallel_programming.pdf"]
+  },
+  {
+    "query": "What is deadlock?",
+    "relevant_documents": ["os.pdf"]
+  },
+  {
+    "query": "Define IoT",
+    "relevant_documents": ["iot.pdf"]
+  },
+  {
+    "query": "What are the characteristics of IoT?",
+    "relevant_documents": ["iot.pdf"]
+  },
+  {
+    "query": "What is DBMS and define IoT?",
+    "relevant_documents": ["dbms.pdf", "iot.pdf"],
+    "topics": [
+      {
+        "name": "DBMS",
+        "relevant_documents": ["dbms.pdf"]
+      },
+      {
+        "name": "IoT",
+        "relevant_documents": ["iot.pdf"]
+      }
+    ]
+  },
+  {
+    "query": "Define IoT and explain semaphores",
+    "relevant_documents": ["iot.pdf", "os.pdf"],
+    "topics": [
+      {
+        "name": "IoT",
+        "relevant_documents": ["iot.pdf"]
+      },
+      {
+        "name": "semaphores",
+        "relevant_documents": ["os.pdf"]
+      }
+    ]
+  },
+  {
+    "query": "What is normalization and what are its types?",
+    "relevant_documents": ["dbms.pdf"]
+  },
+  {
+    "query": "What is a semaphore and why is it used?",
+    "relevant_documents": ["os.pdf"]
+  },
+  {
+    "query": "Explain normalization",
+    "relevant_documents": ["dbms.pdf"]
+  },
+  {
+    "query": "Explain deadlock and its necessary conditions",
+    "relevant_documents": ["os.pdf"],
+    "topics": [
+      {
+        "name": "deadlock",
+        "relevant_documents": ["os.pdf"]
+      },
+      {
+        "name": "necessary conditions",
+        "relevant_documents": ["os.pdf"]
+      }
+    ]
+  },
+  {
+    "query": "What is IoT and what are smartphones?",
+    "relevant_documents": ["iot.pdf"]
+  }
+]

@@ -94,7 +94,9 @@ class AdaptiveRetrievalPolicy:
             return True
         if previous_confidence is not None:
             gain = float(confidence) - float(previous_confidence)
-            if gain <= self.convergence_epsilon:
+            # A small non-negative gain is a plateau. A negative gain is a
+            # regression, not convergence, and should not prematurely stop.
+            if 0.0 <= gain <= self.convergence_epsilon:
                 return True
         if plan is not None and current_k is not None and current_k >= plan.max_k:
             return True

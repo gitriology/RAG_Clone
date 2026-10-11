@@ -5,6 +5,7 @@ from backend.ms_arc.state.retrieval_state import (
 from backend.ms_arc.state.retrieval_signals import (
     StabilityMetrics,
 )
+from backend.ms_arc.stability.metrics import jaccard, prefix_jaccard
 
 from backend.retrieval.hybrid.hybrid_search import (
     hybrid_search,
@@ -15,32 +16,6 @@ from backend.ms_arc.retrieval.retrieve import (
     bm25,
     texts,
 )
-
-
-# ==========================================================
-# JACCARD SIMILARITY
-# ==========================================================
-
-def jaccard(a, b):
-    """
-    Computes Jaccard similarity between two
-    retrieval sets.
-    """
-
-    a = set(a)
-    b = set(b)
-
-    if not a and not b:
-        return 1.0
-
-    union = a | b
-
-    if not union:
-        return 1.0
-
-    return len(
-        a & b
-    ) / len(union)
 
 
 # ==========================================================
@@ -71,13 +46,18 @@ def compute_stability(
         previous = [str(x) for x in adaptive_rankings[-2]] if len(adaptive_rankings) > 1 else None
 
         if previous is None:
+            # A single ranking cannot establish stability; use the existing
+            # neutral prior rather than claiming either stability or instability.
             overlap_1 = 0.5
             overlap_2 = 0.5
+            stability_score = 0.5
         else:
-            overlap_1 = jaccard(previous, current)
+            # Adaptive retrieval increases K. Compare the previous ranking with
+            # the equally sized prefix of the expanded ranking; otherwise a
+            # perfectly preserved top-5 would score only 5/10 by Jaccard.
+            overlap_1 = prefix_jaccard(previous, current)
             overlap_2 = overlap_1
-
-        stability_score = (overlap_1 + overlap_2) / 2.0
+            stability_score = overlap_1
         current_k = state.debug.get("retrieval_k_used", len(current))
 
         state.signals.stability = StabilityMetrics(
@@ -162,21 +142,12 @@ def compute_stability(
     # Jaccard Overlap
     # ======================================================
 
-    overlap_1 = jaccard(
+    # Compare equal-sized top prefixes across increasing K values. Raw
+    # Jaccard on full sets penalizes the larger result set even when the
+    # original top-ranked documents remain unchanged.
+    overlap_1 = prefix_jaccard(runs[0], runs[1])
 
-        runs[0],
-
-        runs[1],
-
-    )
-
-    overlap_2 = jaccard(
-
-        runs[1],
-
-        runs[2],
-
-    )
+    overlap_2 = prefix_jaccard(runs[1], runs[2])
 
     stability_score = (
 

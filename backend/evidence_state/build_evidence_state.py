@@ -169,10 +169,6 @@ def build_evidence_state(
         state,
     )
 
-    state = compute_evidence_score(
-        state,
-    )
-
     # ======================================================
     # Stage 6
     # Diagnostics
@@ -191,6 +187,13 @@ def build_evidence_state(
     )
 
     state = compute_uncertainty(
+        state,
+    )
+
+    # Compute the final score only after its health and uncertainty components
+    # have been refreshed. Previously this ran too early and consumed the
+    # default health=0 / uncertainty=0 values.
+    state = compute_evidence_score(
         state,
     )
 

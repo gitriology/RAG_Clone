@@ -21,6 +21,7 @@ from collections import OrderedDict
 
 import numpy as np
 import re
+from time import perf_counter
 
 from backend.retrieval.dense.embedder import encode_query
 from backend.retrieval.lexical.bm25 import tokenize
@@ -37,31 +38,115 @@ from backend.retrieval.query_matching import (
 
 _CACHE_MAX_SIZE = 128
 _QUERY_CACHE = OrderedDict()
+_CORPUS_FINGERPRINT_CACHE = {}
 
 
-def _cache_key(query, faiss_index, bm25, texts, k, candidate_k, dense_weight, sparse_weight, fusion_method, rrf_k):
-    """Create a cache key that invalidates when the corpus/index changes."""
+def _corpus_fingerprint(texts):
+    """Fingerprint a corpus once, recomputing only if its string objects change.
+
+    The corpus is immutable during normal serving. Comparing string identities
+    is much cheaper than hashing every full chunk for every retrieval iteration,
+    while still invalidating the cache if a list entry is replaced or resized.
+    """
+    corpus_id = id(texts)
+    signature = (len(texts), tuple(id(text) for text in texts))
+    cached = _CORPUS_FINGERPRINT_CACHE.get(corpus_id)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+
     digest = hashlib.sha256()
     digest.update(str(len(texts)).encode("utf-8"))
     for text in texts:
         encoded = str(text).encode("utf-8", errors="replace")
         digest.update(len(encoded).to_bytes(8, "big"))
         digest.update(encoded)
+    fingerprint = digest.hexdigest()
+    _CORPUS_FINGERPRINT_CACHE[corpus_id] = (signature, fingerprint)
+
+    # Bound the auxiliary cache in long-running processes.
+    while len(_CORPUS_FINGERPRINT_CACHE) > 16:
+        _CORPUS_FINGERPRINT_CACHE.pop(next(iter(_CORPUS_FINGERPRINT_CACHE)))
+    return fingerprint
+
+
+_ANCHOR_CACHE_MAX_SIZE = 256
+_ANCHOR_CACHE = OrderedDict()
+
+# Query embeddings are independent of K/candidate depth, so adaptive retrieval
+# can reuse them safely across iterations. Keep this cache bounded and return
+# copies so callers cannot mutate cached arrays.
+_QUERY_EMBEDDING_CACHE_MAX_SIZE = 512
+_QUERY_EMBEDDING_CACHE = OrderedDict()
+_QUERY_EMBEDDING_STATS = {"hits": 0, "misses": 0, "evictions": 0}
+
+
+def _embedding_model_cache_identity():
+    """Stable cache namespace for configured model version and encode settings.
+
+    Set RAGAR_EMBEDDING_MODEL_REVISION when the deployed model/revision changes.
+    A stable namespace is intentional: deriving the key from whether a lazy model
+    has loaded would cause an avoidable miss on the first warm request.
+    """
+    import os
+    model_name = "BAAI/bge-base-en-v1.5"
+    model_revision = os.getenv("RAGAR_EMBEDDING_MODEL_REVISION", "configured-default")
+    # Query encoding currently uses normalized float32 vectors. Include these
+    # settings so future configuration changes cannot silently reuse old keys.
+    return (model_name, model_revision, "normalize=true", "dtype=float32", "encode_query-v1")
+
+
+def _get_query_embedding(query):
+    normalized_query = str(query).strip()
+    key = (_embedding_model_cache_identity(), normalized_query)
+    cached = _QUERY_EMBEDDING_CACHE.get(key)
+    if cached is not None:
+        _QUERY_EMBEDDING_CACHE.move_to_end(key)
+        _QUERY_EMBEDDING_STATS["hits"] += 1
+        return cached.copy(), "hit"
+    _QUERY_EMBEDDING_STATS["misses"] += 1
+    embedding = np.asarray(encode_query(normalized_query), dtype=np.float32)
+    _QUERY_EMBEDDING_CACHE[key] = embedding.copy()
+    _QUERY_EMBEDDING_CACHE.move_to_end(key)
+    while len(_QUERY_EMBEDDING_CACHE) > _QUERY_EMBEDDING_CACHE_MAX_SIZE:
+        _QUERY_EMBEDDING_CACHE.popitem(last=False)
+        _QUERY_EMBEDDING_STATS["evictions"] += 1
+    return embedding, "miss"
+
+
+def _cache_key(query, faiss_index, bm25, texts, k, candidate_k, dense_weight, sparse_weight, fusion_method, rrf_k, return_candidates=False):
+    """Create a cache key that invalidates when corpus or output mode changes."""
     return (
-        str(query), id(faiss_index), id(bm25), digest.hexdigest(),
+        str(query), id(faiss_index), id(bm25), _corpus_fingerprint(texts),
         int(k), int(candidate_k), float(dense_weight), float(sparse_weight),
-        str(fusion_method), int(rrf_k),
+        str(fusion_method), int(rrf_k), bool(return_candidates),
     )
 
 
-def clear_query_cache():
-    """Clear the process-local hybrid retrieval cache."""
+def clear_result_cache():
+    """Clear result/anchor caches but retain query embeddings for warm tests."""
     _QUERY_CACHE.clear()
+    _ANCHOR_CACHE.clear()
+    _CORPUS_FINGERPRINT_CACHE.clear()
+
+
+def clear_query_cache():
+    """Clear all process-local retrieval caches (useful for tests/reloads)."""
+    clear_result_cache()
+    _QUERY_EMBEDDING_CACHE.clear()
+    for key in _QUERY_EMBEDDING_STATS:
+        _QUERY_EMBEDDING_STATS[key] = 0
+    for key in _QUERY_EMBEDDING_STATS:
+        _QUERY_EMBEDDING_STATS[key] = 0
 
 
 def query_cache_info():
-    """Return cache size diagnostics."""
-    return {"size": len(_QUERY_CACHE), "max_size": _CACHE_MAX_SIZE}
+    """Return bounded-cache sizes and cumulative embedding hit/miss counts."""
+    return {"size": len(_QUERY_CACHE), "max_size": _CACHE_MAX_SIZE,
+            "embedding_size": len(_QUERY_EMBEDDING_CACHE),
+            "embedding_max_size": _QUERY_EMBEDDING_CACHE_MAX_SIZE,
+            "embedding_cache_hits": _QUERY_EMBEDDING_STATS["hits"],
+            "embedding_cache_misses": _QUERY_EMBEDDING_STATS["misses"],
+            "embedding_cache_evictions": _QUERY_EMBEDDING_STATS["evictions"]}
 
 
 # ==========================================================
@@ -92,7 +177,10 @@ def _normalize(scores):
     maximum = np.max(scores)
 
     if maximum == minimum:
-        return np.ones_like(scores)
+        # A flat score vector contains no ranking signal. Returning ones here
+        # (especially when every BM25 score is zero) gives unrelated
+        # candidates full sparse relevance and can dominate hybrid fusion.
+        return np.zeros_like(scores)
 
     return (
         (scores - minimum)
@@ -150,7 +238,15 @@ def _anchor_candidates(query, texts, limit_per_focus=4):
 
     This is intentionally independent of dense similarity. It is especially
     useful for legal references (Article 12), acronyms and multi-word names.
+    Results are cached because adaptive retrieval revisits the same query at
+    several candidate depths.
     """
+    cache_key = (str(query), _corpus_fingerprint(texts), int(limit_per_focus))
+    cached = _ANCHOR_CACHE.get(cache_key)
+    if cached is not None:
+        _ANCHOR_CACHE.move_to_end(cache_key)
+        return list(cached)
+
     analysis = analyze_query(query)
     focus = analysis.get("focus_phrases", [])
     references = set(analysis.get("references", []))
@@ -181,7 +277,12 @@ def _anchor_candidates(query, texts, limit_per_focus=4):
         for _, idx in scored[:limit_per_focus]:
             selected[idx] = True
 
-    return list(selected.keys())
+    result = list(selected.keys())
+    _ANCHOR_CACHE[cache_key] = tuple(result)
+    _ANCHOR_CACHE.move_to_end(cache_key)
+    while len(_ANCHOR_CACHE) > _ANCHOR_CACHE_MAX_SIZE:
+        _ANCHOR_CACHE.popitem(last=False)
+    return result
 
 
 # ==========================================================
@@ -199,6 +300,7 @@ def hybrid_search(
     sparse_weight=0.4,
     fusion_method="minmax",
     rrf_k=60,
+    return_candidates=False,
 ):
     """
     Execute dense + sparse retrieval followed by fusion.
@@ -216,6 +318,10 @@ def hybrid_search(
             "merged_results": [...],
             "fusion_method": ...,
             "candidate_k": ...
+
+        return_candidates:
+            False (default) returns top-k as before. True returns the
+            complete fused candidate pool for downstream reranking.
         }
     """
 
@@ -257,13 +363,16 @@ def hybrid_search(
 
     cache_key = _cache_key(
         query, faiss_index, bm25, texts, k, candidate_k,
-        dense_weight, sparse_weight, fusion_method, rrf_k,
+        dense_weight, sparse_weight, fusion_method, rrf_k, return_candidates,
     )
     cached = _QUERY_CACHE.get(cache_key)
     if cached is not None:
         _QUERY_CACHE.move_to_end(cache_key)
         print("[Hybrid Retrieval] Query cache: HIT")
-        return copy.deepcopy(cached)
+        cached_copy = copy.deepcopy(cached)
+        cached_copy.setdefault("stage_timings_seconds", {})["query_result_cache_hit"] = True
+        cached_copy["cache_diagnostics"] = query_cache_info()
+        return cached_copy
 
     print(
         f"[Hybrid Retrieval] "
@@ -277,14 +386,18 @@ def hybrid_search(
     # DENSE RETRIEVAL
     # ======================================================
 
-    query_embedding = encode_query(query)
+    _embedding_started = perf_counter()
+    query_embedding, embedding_cache_status = _get_query_embedding(query)
+    embedding_seconds = perf_counter() - _embedding_started
 
+    _dense_started = perf_counter()
     dense_scores, dense_ids = (
         faiss_index.search(
             query_embedding,
             candidate_k,
         )
     )
+    dense_search_seconds = perf_counter() - _dense_started
 
     dense_scores_raw = dense_scores[0]
     dense_ids = dense_ids[0]
@@ -379,6 +492,7 @@ def hybrid_search(
     # SPARSE RETRIEVAL
     # ======================================================
 
+    _bm25_started = perf_counter()
     bm25_tokens = tokenize(query)
 
     print(
@@ -393,6 +507,7 @@ def hybrid_search(
     bm25_ids = np.argsort(
         bm25_scores
     )[::-1][:candidate_k]
+    bm25_search_seconds = perf_counter() - _bm25_started
 
     valid_sparse = []
 
@@ -523,7 +638,7 @@ def hybrid_search(
     # ======================================================
     # FUSION
     # ======================================================
-
+    _fusion_started = perf_counter()
     merged_results = []
 
     for doc_id in all_doc_ids:
@@ -695,9 +810,11 @@ def hybrid_search(
     # TOP K
     # ======================================================
 
-    merged_results = (
-        merged_results[:k]
-    )
+    # By default retain the historical API: return only the requested top-k.
+    # MS-ARC opts into the full candidate pool so CrossEncoder reranking can
+    # rescue a strong candidate that hybrid fusion ranked just below k.
+    output_limit = candidate_k if return_candidates else k
+    merged_results = merged_results[:output_limit]
 
     print(
         f"[Hybrid Retrieval] "
@@ -730,8 +847,19 @@ def hybrid_search(
     # RETURN
     # ======================================================
 
+    fusion_seconds = perf_counter() - _fusion_started
     result = {
-
+        "stage_timings_seconds": {
+            "query_embedding_seconds": embedding_seconds,
+            "dense_search_seconds": dense_search_seconds,
+            "bm25_search_seconds": bm25_search_seconds,
+            "candidate_fusion_seconds": fusion_seconds,
+            "hybrid_search_total_seconds": embedding_seconds + dense_search_seconds + bm25_search_seconds + fusion_seconds,
+            "query_result_cache_hit": False,
+        },
+        "embedding_cache_status": embedding_cache_status,
+        "candidate_count": len(merged_results),
+        "cache_diagnostics": query_cache_info(),
         "dense_results":
             dense_results,
 
