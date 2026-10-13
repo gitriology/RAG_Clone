@@ -1,5 +1,6 @@
 import {
   ChevronDown,
+  Info,
   LogOut,
   Menu,
   Moon,
@@ -10,10 +11,12 @@ import {
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import LogoMark from "./LogoMark";
+import HelpDialog from "./HelpDialog";
 
 function Header({ onMenuClick, sidebarOpen, theme, onToggleTheme }) {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const initial = (user?.displayName || user?.email || "S")
     .charAt(0)
@@ -41,6 +44,14 @@ function Header({ onMenuClick, sidebarOpen, theme, onToggleTheme }) {
       </div>
 
       <div className="topbar-actions">
+        <button
+          className="icon-button help-button"
+          onClick={() => setHelpOpen(true)}
+          aria-label="Help and information"
+          title="Help and information"
+        >
+          <Info size={19} />
+        </button>
         <button
           className="icon-button"
           onClick={onToggleTheme}
@@ -78,6 +89,7 @@ function Header({ onMenuClick, sidebarOpen, theme, onToggleTheme }) {
           )}
         </div>
       </div>
+      {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
     </header>
   );
 }

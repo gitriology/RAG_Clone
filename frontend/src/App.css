@@ -3367,3 +3367,487 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ==========================================================
+   Mobile viewport + safe-area corrections and Help dialog
+   ========================================================== */
+.help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  background: rgba(14, 22, 29, 0.48);
+  backdrop-filter: blur(5px);
+}
+.help-dialog {
+  width: min(700px, 100%);
+  max-height: min(84dvh, 850px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--panel-solid);
+  border: 1px solid var(--line-strong);
+  border-radius: 22px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.24);
+}
+.help-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 24px 26px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.help-title-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 14px;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.help-title-copy {
+  min-width: 0;
+  flex: 1;
+}
+.help-eyebrow {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+.help-title-copy h2 {
+  margin: 4px 0 3px;
+  font-family: var(--serif);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.1;
+}
+.help-title-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.help-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.help-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 22px 26px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.help-intro-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 15px;
+  color: var(--text);
+  background: var(--accent-soft);
+  border-radius: 14px;
+}
+.help-intro-card > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+.help-intro-card strong,
+.help-steps strong,
+.help-tips-grid strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+}
+.help-intro-card p,
+.help-steps p,
+.help-tips-grid p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.help-dialog-body h3 {
+  margin: 23px 0 12px;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.help-steps {
+  display: grid;
+  gap: 15px;
+}
+.help-steps article {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+.help-step-number {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  color: var(--accent);
+  background: var(--panel-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 800;
+}
+.help-tips-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.help-tips-grid > div {
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+.help-tips-grid svg {
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.help-note {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  color: var(--muted);
+  background: var(--panel-soft);
+  border-radius: 0 10px 10px 0;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.help-dialog-footer {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 26px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+}
+.help-dialog-footer button {
+  padding: 9px 17px;
+  color: #fff;
+  background: #315d59;
+  border: 0;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 650;
+}
+[data-theme="dark"] .help-dialog-footer button {
+  color: #0e1522;
+  background: #9ad8ca;
+}
+
+/* Use the visual viewport on modern mobile browsers and respect Android/iOS safe areas. */
+@media (max-width: 768px) {
+  html,
+  body,
+  #root {
+    height: 100%;
+    min-height: 0;
+  }
+  .app-shell,
+  .main-area {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+  }
+  .topbar {
+    padding-top: env(safe-area-inset-top, 0px);
+    flex-basis: calc(58px + env(safe-area-inset-top, 0px));
+    height: calc(58px + env(safe-area-inset-top, 0px));
+    min-height: calc(58px + env(safe-area-inset-top, 0px));
+  }
+  .sidebar {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    padding-top: calc(18px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+  .sidebar.mobile-open {
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar-note {
+    margin-top: 18px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+  .recent-list {
+    flex: 1 1 auto;
+    min-height: 70px;
+  }
+  .main-area > .workspace-grid {
+    flex: 1 1 0;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+  .chat-column {
+    min-height: 0;
+    padding-bottom: 18px;
+  }
+  .main-area > .query-bar-wrap {
+    flex: 0 0 auto;
+    position: relative;
+    padding: 9px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+  .query-bar {
+    width: 100%;
+    min-width: 0;
+  }
+  .query-bar input {
+    min-width: 0;
+    width: 100%;
+  }
+  .help-backdrop {
+    align-items: flex-end;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .help-dialog {
+    max-height: calc(92dvh - env(safe-area-inset-top, 0px));
+    border-radius: 20px;
+  }
+  .help-dialog-header {
+    padding: 18px 17px 15px;
+    gap: 11px;
+  }
+  .help-title-copy h2 {
+    font-size: 26px;
+  }
+  .help-title-copy p {
+    font-size: 12px;
+  }
+  .help-dialog-body {
+    padding: 16px 17px;
+  }
+  .help-dialog-footer {
+    flex: 0 0 auto;
+    padding: 12px 17px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+  .help-dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
+@media (max-width: 420px) {
+  .topbar {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+  .topbar-actions {
+    gap: 5px;
+  }
+  .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+  .user-button {
+    gap: 5px;
+  }
+  .help-tips-grid {
+    grid-template-columns: 1fr;
+  }
+  .help-dialog-footer > span {
+    max-width: 60%;
+  }
+  .query-bar-wrap {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+}
+
+/* ==========================================================
+   Final mobile layout: keep the welcome message and composer
+   inside the visible viewport on Android and iOS devices.
+   ========================================================== */
+@media (max-width: 768px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .main-area {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .main-area > .topbar {
+    flex: 0 0 calc(58px + env(safe-area-inset-top, 0px));
+  }
+
+  .main-area > .workspace-grid {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0 12px;
+  }
+
+  .workspace-grid > .chat-column {
+    min-height: 0;
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 0 2px 14px;
+    overscroll-behavior: contain;
+  }
+
+  .welcome-state {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100%;
+    padding: clamp(20px, 5vh, 38px) 8px;
+    align-content: center;
+    justify-items: center;
+    gap: 0;
+  }
+
+  .welcome-state h1 {
+    max-width: 100%;
+    margin: 0 0 12px;
+    font-size: clamp(27px, 7.2vw, 36px);
+    line-height: 1.08;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+
+  .welcome-state p {
+    width: 100%;
+    max-width: 34rem;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .main-area > .query-bar-wrap {
+    box-sizing: border-box;
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+    width: 100%;
+    margin: 0;
+    /* A little extra breathing room below the composer, plus device safe area. */
+    padding: 10px 12px calc(38px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+  }
+
+  .query-bar {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 900px;
+    min-width: 0;
+    min-height: 48px;
+    height: 48px;
+    margin: 0 auto;
+  }
+
+  .query-bar input {
+    min-width: 0;
+    width: 100%;
+    font-size: 14px;
+  }
+
+  .query-bar input::placeholder {
+    text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 380px) {
+  .main-area > .workspace-grid {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .main-area > .query-bar-wrap {
+    padding-left: 9px;
+    padding-right: 9px;
+    padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+  .query-bar {
+    gap: 8px;
+    padding-left: 10px;
+  }
+  .query-sparkle {
+    width: 16px;
+    height: 16px;
+  }
+  .send-button {
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+  }
+}
+
+/* Fix: ensure the sidebar's bottom tagline is visible in the mobile drawer.
+   The compact tablet sidebar intentionally hides this copy, so explicitly
+   restore it only while the mobile drawer is open. */
+@media (max-width: 768px) {
+  .sidebar.mobile-open .sidebar-note {
+    box-sizing: border-box;
+    width: 100%;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 136px;
+    padding: 18px 14px;
+  }
+
+  .sidebar.mobile-open .sidebar-note-copy {
+    display: flex !important;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    visibility: visible;
+    opacity: 1;
+  }
+
+  .sidebar.mobile-open .sidebar-note-copy strong {
+    display: block;
+    color: var(--text);
+    font-size: 12px;
+    line-height: 1.75;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}

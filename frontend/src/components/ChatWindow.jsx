@@ -97,10 +97,10 @@ function ChatWindow({
         {messages.length === 0 ? (
           <div className="welcome-state">
             <div className="welcome-mark">✦</div>
-            <h1>Ask deeper questions.</h1>
+            <h1>Better questions. Deeper context. Smarter answers.</h1>
             <p>
               Search your knowledge base, inspect retrieved evidence, and follow
-              how the answer was formed.
+              how each answer was formed.
             </p>
           </div>
         ) : (
