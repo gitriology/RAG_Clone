@@ -1009,15 +1009,13 @@ the React frontend (deployed on Vercel).
 
 If you use MS-ARC, RAGar, or the evaluation framework in your academic research or engineering projects, please cite it as follows:
 
-```bibtex
-@software{ragar_msarc_2026,
-  author    = {RAGar Development Team},
-  title     = {RAGar — MS-ARC: Adaptive Multi-State Retrieval with Evidence Graph Reasoning},
+@article{tiwari_msarc_2026,
+  author    = {Rajni Tiwari and Sheetal Pawar and Shivani Sivasankar and Swathi R Nair and Tanvi K R},
+  title     = {MS-ARC: An Adaptive Multi-State Retrieval Framework with Evidence Graph Reasoning for Large Language Models},
+  journal   = {Proceedings of CMR Institute of Technology Research},
   year      = {2026},
+  institution = {Dept. of Computer Science and Engineering, CMR Institute of Technology, Bengaluru, India},
   url       = {https://rag-clone.vercel.app/},
-  note      = {Framework implementation and evaluation corpus for adaptive retrieval control}
+  note      = {Evaluation on a 2,013-chunk corpus demonstrating adaptive retrieval depth, evidence graph reasoning, and improved latency/accuracy trade-offs}
 }
-```
 
----
-```
