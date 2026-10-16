@@ -906,3 +906,118 @@ never becomes circular); metrics are Recall@K, Precision@K, Hit-rate, MRR@K, ave
 FAISS returns **row indices** — `data[1885]` means row 1885, not `id == 1885` (the dataset `id` is not globally
 unique).
 
+Here’s the full continuation rewritten in the **same README-style text format** as your attached file. You can copy and paste this directly into your repository — it flows seamlessly from sections 1–14 and matches the tone, formatting, and technical style:
+
+```markdown
+---
+
+## 15. Deployment
+
+The application is split into two deployment artifacts: the FastAPI backend (packaged via Docker for AWS EC2) and
+the React frontend (deployed on Vercel).
+
+### 15.1 Backend deployment (AWS EC2 + Docker + Nginx + Let's Encrypt)
+
+1. **Provision an EC2 instance:** Ubuntu 22.04 LTS (t3.medium or larger recommended for model memory footprint). Open
+   ports `22` (SSH), `80` (HTTP), and `443` (HTTPS) in your security group.
+2. **Install Docker and Docker Compose** on the instance.
+3. **Clone the repository and checkout the deployment branch:**
+   ```bash
+   git clone https://github.com/<OWNER>/<REPO>.git .
+   git checkout deployable
+   ```
+4. **Create the production `.env` file** in the repository root:
+   ```env
+   GROQ_API_KEY=your_groq_api_key_here
+   GROQ_MODEL=openai/gpt-oss-120b
+   FRONTEND_ORIGIN=https://rag-clone.vercel.app
+   ```
+5. **Build and start the container:**
+   ```bash
+   docker build -t ragar-backend .
+   docker run -d -p 8000:8000 --env-file .env --name ragar-backend-container ragar-backend
+   ```
+   *(Alternatively, use a `docker-compose.yml` orchestrating the container with automatic restart policies).*
+6. **Configure Nginx as a reverse proxy** (`/etc/nginx/sites-available/default`):
+   ```nginx
+   server {
+       listen 80;
+       server_name your-ec2-domain.compute-amazonaws.com;
+
+       location / {
+           proxy_pass http://127.0.0.1:8000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_read_timeout 300s;
+       }
+   }
+   ```
+7. **Secure with HTTPS (Certbot / Let's Encrypt):**
+   ```bash
+   sudo apt install certbot python3-certbot-nginx
+   sudo certbot --nginx -d your-ec2-domain.compute-amazonaws.com
+   ```
+
+### 15.2 Frontend deployment (Vercel)
+
+1. Import the `frontend/` directory (or repository root with root directory set to `frontend`) into Vercel.
+2. Configure build settings:
+   * **Framework Preset:** Vite  
+   * **Build Command:** `npm run build`  
+   * **Output Directory:** `dist`
+3. Set the production environment variables in the Vercel dashboard:
+   ```env
+   VITE_API_BASE_URL=https://your-ec2-domain.compute-amazonaws.com
+   VITE_FIREBASE_API_KEY=...
+   VITE_FIREBASE_AUTH_DOMAIN=...
+   VITE_FIREBASE_PROJECT_ID=...
+   VITE_FIREBASE_STORAGE_BUCKET=...
+   VITE_FIREBASE_MESSAGING_SENDER_ID=...
+   VITE_FIREBASE_APP_ID=...
+   ```
+4. Trigger a deployment. Vercel will build and serve the static SPA bundle globally over HTTPS. Ensure your Firebase
+   Console has your Vercel production domain authorized under Authentication settings.
+
+---
+
+## 16. Troubleshooting
+
+| Symptom | Probable cause | Solution |
+|---|---|---|
+| **`ModuleNotFoundError: No module named 'backend'`** | Running scripts from the wrong directory or without the package context. | Run scripts as modules from the repository root (e.g., `python -m backend.main`) or ensure `PYTHONPATH` includes the root. |
+| **FAISS index size mismatch / runtime assertion error** | The knowledge base JSON (`all_domains.json`) was modified or replaced without rebuilding indices. | Rebuild embeddings and index artifacts: run `python -m backend.retrieval.utils.save_embeddings` followed by `python -m backend.retrieval.index.build_index`. |
+| **BM25 cache validation warning / stale cache** | Corpus fingerprint mismatch after updating chunks. | Delete `backend/retrieval/index/bm25_cache.pkl` manually; it will auto-regenerate on the next retrieval query. |
+| **Groq API 401 Unauthorized / connection timeout** | Missing, malformed, or expired `GROQ_API_KEY` in environment variables. | Check your `.env` / Vercel secrets. If the key is absent, the backend falls back gracefully to extractive RAG answers. |
+| **Google Sign-In popup blocked or fails with `auth/unauthorized-domain`** | The production domain is not registered in Firebase Authentication settings. | Go to Firebase Console → Authentication → Settings → Authorized domains, and add your Vercel domain and custom domains. |
+| **CORS policy error in browser console** | `FRONTEND_ORIGIN` environment variable mismatch on the FastAPI backend. | Ensure `FRONTEND_ORIGIN` matches your exact frontend URL (including `https://` and no trailing slash). |
+| **High memory consumption / OOM killer terminates container** | Heavy embedding models or large FAISS HNSW graphs loaded concurrently with spaCy. | Ensure CPU-only PyTorch is installed inside Docker; adjust container memory limits or switch FAISS index type to `IndexFlatIP` if RAM is severely constrained. |
+
+---
+
+## 17. Known gaps and notes
+
+* **Corpus Scope:** The runtime repository defaults to a compact multi-domain demonstration knowledge base (~690 chunks). Replicating the full benchmark statistics reported in the research paper requires loading the complete 2,013-chunk evaluation dataset.
+* **Asynchronous Index Updates:** The FAISS index and BM25 cache are static artifacts generated at build time. Dynamic, real-time incremental document insertion (live vector upserts without full re-indexing) is not supported in the current version.
+* **LLM Dependency:** While the system operates entirely offline using extractive synthesis if no LLM key is provided, advanced multi-topic query decomposition and semantic follow-up resolution require an active Groq API connection.
+* **Firestore Security Rules:** Default repository deployment assumes standard user authentication scoping; production deployments must explicitly deploy robust Firestore security rules to guarantee tenant isolation.
+
+---
+
+## 18. Citation
+
+If you use MS-ARC, RAGar, or the evaluation framework in your academic research or engineering projects, please cite it as follows:
+
+```bibtex
+@software{ragar_msarc_2026,
+  author    = {RAGar Development Team},
+  title     = {RAGar — MS-ARC: Adaptive Multi-State Retrieval with Evidence Graph Reasoning},
+  year      = {2026},
+  url       = {https://rag-clone.vercel.app/},
+  note      = {Framework implementation and evaluation corpus for adaptive retrieval control}
+}
+```
+
+---
+```
