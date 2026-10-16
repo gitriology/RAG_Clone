@@ -911,6 +911,11 @@ Here’s the full continuation rewritten in the **same README-style text format*
 ```markdown
 ---
 
+Here’s the full continuation rewritten in the **same README-style text format** as your attached file. You can copy and paste this directly into your repository — it flows seamlessly from sections 1–14 and matches the tone, formatting, and technical style:
+
+```markdown
+---
+
 ## 15. Deployment
 
 The application is split into two deployment artifacts: the FastAPI backend (packaged via Docker for AWS EC2) and
@@ -1009,13 +1014,13 @@ the React frontend (deployed on Vercel).
 
 If you use MS-ARC, RAGar, or the evaluation framework in your academic research or engineering projects, please cite it as follows:
 
-@article{tiwari_msarc_2026,
+```bibtex
+@software{ragar_msarc_2026,
   author    = {Rajni Tiwari and Sheetal Pawar and Shivani Sivasankar and Swathi R Nair and Tanvi K R},
-  title     = {MS-ARC: An Adaptive Multi-State Retrieval Framework with Evidence Graph Reasoning for Large Language Models},
-  journal   = {Proceedings of CMR Institute of Technology Research},
-  year      = {2026},
+  title     = MS-ARC: An Adaptive Multi-State Retrieval Framework with Evidence Graph Reasoning for Large Language Models},
   institution = {Dept. of Computer Science and Engineering, CMR Institute of Technology, Bengaluru, India},
   url       = {https://rag-clone.vercel.app/},
   note      = {Evaluation on a 2,013-chunk corpus demonstrating adaptive retrieval depth, evidence graph reasoning, and improved latency/accuracy trade-offs}
 }
+```
 
