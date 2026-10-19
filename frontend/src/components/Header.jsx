@@ -2,7 +2,6 @@ import {
   ChevronDown,
   Info,
   LogOut,
-  Menu,
   Moon,
   Sun,
   PanelLeftClose,
@@ -56,6 +55,7 @@ function Header({ onMenuClick, sidebarOpen, theme, onToggleTheme }) {
           className="icon-button"
           onClick={onToggleTheme}
           aria-label="Toggle theme"
+          title="Toggle theme"
         >
           {theme === "dark" ? <Sun size={19} /> : <Moon size={19} />}
         </button>

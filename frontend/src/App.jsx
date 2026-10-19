@@ -4,6 +4,7 @@ import Header from "./components/Header";
 import InputBox from "./components/InputBox";
 import Login from "./components/Login";
 import Sidebar from "./components/Sidebar";
+import { SettingsModal } from "./components/SettingsModal";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { sendQuery } from "./services/api";
 import {
@@ -19,13 +20,10 @@ import {
 import "./App.css";
 
 function generateConversationTitle(queryText) {
-  const original = String(queryText || "")
-    .replace(/\s+/g, " ")
-    .trim();
+  const original = String(queryText || "").replace(/\s+/g, " ").trim();
   if (!original) return "New Query";
 
   let title = original.replace(/[?!.]+$/g, "").trim();
-
   const patterns = [
     /^what\s+are\s+(?:the\s+)?(.+)$/i,
     /^what\s+is\s+(?:the\s+)?(.+)$/i,
@@ -44,21 +42,15 @@ function generateConversationTitle(queryText) {
   title = title.replace(/\s+/g, " ").trim();
   if (!title) title = original;
 
-  // Keep the sidebar title concise without cutting a word in half.
   const MAX_LENGTH = 52;
   if (title.length <= MAX_LENGTH) return title;
 
-  const shortened = title
-    .slice(0, MAX_LENGTH + 1)
-    .replace(/\s+\S*$/, "")
-    .trim();
+  const shortened = title.slice(0, MAX_LENGTH + 1).replace(/\s+\S*$/, "").trim();
   return `${shortened || title.slice(0, MAX_LENGTH).trim()}…`;
 }
 
 function formatRelativeTime(timestamp) {
-  const milliseconds =
-    timestamp?.toMillis?.() ?? timestamp?.getTime?.() ?? null;
-
+  const milliseconds = timestamp?.toMillis?.() ?? timestamp?.getTime?.() ?? null;
   if (!milliseconds) return "Just now";
 
   const diff = Math.max(0, Date.now() - milliseconds);
@@ -81,9 +73,7 @@ function makeThread(conversation) {
   return {
     id: conversation.id,
     title: conversation.title || "New Query",
-    timeLabel: formatRelativeTime(
-      conversation.updatedAt || conversation.createdAt,
-    ),
+    timeLabel: formatRelativeTime(conversation.updatedAt || conversation.createdAt),
     persistent: true,
   };
 }
@@ -108,9 +98,7 @@ function mapStoredMessage(message) {
     pipelineVersion: message.pipelineVersion,
     answerValid: Boolean(message.answerValid),
     retrievalConfidence: Number(message.retrievalConfidence ?? 0),
-    pipelineConfidence: Number(
-      message.pipelineConfidence ?? message.confidence ?? 0,
-    ),
+    pipelineConfidence: Number(message.pipelineConfidence ?? message.confidence ?? 0),
     answerConfidence: Number(message.answerConfidence ?? 0),
     evidenceGraph: message.evidenceGraph || {},
     evidenceState: message.evidenceState || {},
@@ -119,9 +107,7 @@ function mapStoredMessage(message) {
     margin: message.margin,
     stability: message.stability,
     recommendedTopK: message.recommendedTopK,
-    retrievalQueries: Array.isArray(message.retrievalQueries)
-      ? message.retrievalQueries
-      : [],
+    retrievalQueries: Array.isArray(message.retrievalQueries) ? message.retrievalQueries : [],
     multiQuery: Boolean(message.multiQuery),
     createdAt: message.createdAt || null,
   };
@@ -140,15 +126,8 @@ function buildBotMessage(data, queryText, id) {
     sources: Array.isArray(data.sources) ? data.sources : [],
     pipelineVersion: data.pipeline_version,
     answerValid: Boolean(data.meta?.answer_valid),
-    retrievalConfidence: Number(
-      data.retrieval_confidence ?? data.meta?.retrieval_confidence ?? 0,
-    ),
-    pipelineConfidence: Number(
-      data.pipeline_confidence ??
-        data.meta?.pipeline_confidence ??
-        data.confidence ??
-        0,
-    ),
+    retrievalConfidence: Number(data.retrieval_confidence ?? data.meta?.retrieval_confidence ?? 0),
+    pipelineConfidence: Number(data.pipeline_confidence ?? data.meta?.pipeline_confidence ?? data.confidence ?? 0),
     answerConfidence: Number(data.meta?.answer_confidence ?? 0),
     evidenceGraph: {
       node_count: evidenceGraph.node_count,
@@ -162,11 +141,8 @@ function buildBotMessage(data, queryText, id) {
     complexity: data.retrieval_state?.complexity ?? data.meta?.complexity,
     margin: data.retrieval_state?.margin ?? data.meta?.margin,
     stability: data.retrieval_state?.stability ?? data.meta?.stability,
-    recommendedTopK:
-      data.retrieval_state?.recommended_top_k ?? data.meta?.recommended_top_k,
-    retrievalQueries: Array.isArray(data.meta?.search_queries)
-      ? data.meta.search_queries
-      : [queryText],
+    recommendedTopK: data.retrieval_state?.recommended_top_k ?? data.meta?.recommended_top_k,
+    retrievalQueries: Array.isArray(data.meta?.search_queries) ? data.meta.search_queries : [queryText],
     multiQuery: Boolean(data.meta?.multi_query),
     createdAt: new Date(),
   };
@@ -174,10 +150,7 @@ function buildBotMessage(data, queryText, id) {
 
 function buildConversationHistory(messages, limit = 6) {
   return messages
-    .filter(
-      (message) =>
-        (message.type === "user" || message.type === "bot") && !message.loading,
-    )
+    .filter((message) => (message.type === "user" || message.type === "bot") && !message.loading)
     .map((message) => ({
       role: message.type === "user" ? "user" : "assistant",
       text: String(message.text || "").slice(0, 1200),
@@ -189,6 +162,7 @@ function buildConversationHistory(messages, limit = 6) {
 function ResearchApp() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const { user, loading } = useAuth();
 
   const [input, setInput] = useState("");
@@ -221,7 +195,6 @@ function ResearchApp() {
     });
   }, [messages]);
 
-  // Load this authenticated user's conversations from Firestore.
   useEffect(() => {
     let cancelled = false;
 
@@ -243,7 +216,6 @@ function ResearchApp() {
 
       try {
         const conversations = await getUserConversations(user.uid);
-
         if (cancelled) return;
         setRecentThreads(conversations.map(makeThread));
       } catch (error) {
@@ -284,7 +256,6 @@ function ResearchApp() {
 
     try {
       const storedMessages = await getConversationMessages(conversationId);
-
       currentThreadIdRef.current = conversationId;
       setCurrentThreadId(conversationId);
       setMessages(storedMessages.map(mapStoredMessage));
@@ -312,9 +283,7 @@ function ResearchApp() {
         await deleteConversation(conversationId);
       }
 
-      setRecentThreads((prev) =>
-        prev.filter((item) => item.id !== conversationId),
-      );
+      setRecentThreads((prev) => prev.filter((item) => item.id !== conversationId));
 
       if (currentThreadIdRef.current === conversationId) {
         currentThreadIdRef.current = null;
@@ -328,17 +297,12 @@ function ResearchApp() {
     }
   };
 
-  const touchThread = async (
-    conversationId,
-    fallbackTitle,
-    persistent = true,
-  ) => {
+  const touchThread = async (conversationId, fallbackTitle, persistent = true) => {
     const generatedTitle = generateConversationTitle(fallbackTitle);
 
     setRecentThreads((prev) => {
       const existing = prev.find((thread) => thread.id === conversationId);
-      const shouldUseGeneratedTitle =
-        !existing?.title || existing.title === "New Query";
+      const shouldUseGeneratedTitle = !existing?.title || existing.title === "New Query";
       const updated = {
         id: conversationId,
         title: shouldUseGeneratedTitle ? generatedTitle : existing.title,
@@ -346,24 +310,16 @@ function ResearchApp() {
         persistent: existing?.persistent ?? persistent,
       };
 
-      return [
-        updated,
-        ...prev.filter((thread) => thread.id !== conversationId),
-      ];
+      return [updated, ...prev.filter((thread) => thread.id !== conversationId)];
     });
 
-    // Legacy Phase 2/early Phase 3 conversations may still have "New Query".
-    // Upgrade only that default title; never overwrite a meaningful user title.
     if (persistent && conversationId && !conversationId.startsWith("local-")) {
-      const existing = recentThreads.find(
-        (thread) => thread.id === conversationId,
-      );
+      const existing = recentThreads.find((thread) => thread.id === conversationId);
       if (!existing?.title || existing.title === "New Query") {
         try {
           await updateConversationTitle(conversationId, generatedTitle);
         } catch (error) {
           console.error("Could not update conversation title:", error);
-          // The RAG answer remains successful even if the title update fails.
         }
       }
     }
@@ -373,14 +329,7 @@ function ResearchApp() {
     const queryText = String(sourceQuery || "").trim();
     const conversationId = currentThreadIdRef.current;
 
-    if (
-      !queryText ||
-      !message?.id ||
-      !user?.uid ||
-      sending ||
-      conversationLoading ||
-      regeneratingMessageId
-    ) {
+    if (!queryText || !message?.id || !user?.uid || sending || conversationLoading || regeneratingMessageId) {
       return;
     }
 
@@ -408,9 +357,7 @@ function ResearchApp() {
       });
 
       const regenerated = buildBotMessage(data, queryText, message.id);
-      setMessages((prev) =>
-        prev.map((item) => (item.id === message.id ? regenerated : item)),
-      );
+      setMessages((prev) => prev.map((item) => (item.id === message.id ? regenerated : item)));
 
       if (conversationId && !conversationId.startsWith("local-")) {
         try {
@@ -420,10 +367,7 @@ function ResearchApp() {
             buildAssistantMessageData(regenerated),
           );
         } catch (firestoreError) {
-          console.error(
-            "Could not replace regenerated response:",
-            firestoreError,
-          );
+          console.error("Could not replace regenerated response:", firestoreError);
           setHistoryError(
             "The regenerated answer is available, but the updated response could not be saved to history.",
           );
@@ -442,7 +386,6 @@ function ResearchApp() {
 
   const sendMessage = async () => {
     const queryText = input.trim();
-
     if (!queryText || !user?.uid || sending || conversationLoading) return;
 
     setInput("");
@@ -454,7 +397,6 @@ function ResearchApp() {
     let persistentConversation = true;
 
     try {
-      // Create the Firestore conversation only for the first message in a new chat.
       if (!conversationId) {
         try {
           conversationId = await createConversation(
@@ -462,11 +404,7 @@ function ResearchApp() {
             generateConversationTitle(queryText),
           );
         } catch (firestoreError) {
-          // Authentication and RAG should remain usable even if Firestore is temporarily unavailable.
-          console.error(
-            "Could not create Firestore conversation:",
-            firestoreError,
-          );
+          console.error("Could not create Firestore conversation:", firestoreError);
           persistentConversation = false;
           conversationId = `local-${requestId}`;
           setHistoryError(
@@ -487,7 +425,6 @@ function ResearchApp() {
         ]);
       }
 
-      // Render immediately; Firestore should never block the RAG UI.
       setMessages((prev) => [
         ...prev,
         {
@@ -511,14 +448,10 @@ function ResearchApp() {
           });
         } catch (firestoreError) {
           console.error("Could not save user message:", firestoreError);
-          setHistoryError(
-            "The question was sent, but conversation history could not be saved.",
-          );
+          setHistoryError("The question was sent, but conversation history could not be saved.");
         }
       }
 
-      // Send the recent in-memory conversation so the backend can resolve
-      // follow-up references and plan independent multi-topic retrievals.
       const conversationHistory = buildConversationHistory(messages);
       const data = await sendQuery(queryText, {
         topKDocuments: 5,
@@ -528,34 +461,24 @@ function ResearchApp() {
 
       const botMsg = buildBotMessage(data, queryText, `${requestId}-assistant`);
 
-      // Always show the RAG answer, even if the history write fails.
       setMessages((prev) =>
-        prev.map((message) =>
-          message.id === `${requestId}-loading` ? botMsg : message,
-        ),
+        prev.map((message) => (message.id === `${requestId}-loading` ? botMsg : message)),
       );
 
       if (persistentConversation) {
         try {
-          // Store only the metadata needed to reconstruct the UI.
-          // The full evidence graph is intentionally not stored because Firestore
-          // documents have a 1 MiB size limit.
           const savedAssistantId = await addMessage(
             conversationId,
             buildAssistantMessageData(botMsg),
           );
           setMessages((prev) =>
             prev.map((message) =>
-              message.id === botMsg.id
-                ? { ...message, id: savedAssistantId }
-                : message,
+              message.id === botMsg.id ? { ...message, id: savedAssistantId } : message,
             ),
           );
         } catch (firestoreError) {
           console.error("Could not save assistant message:", firestoreError);
-          setHistoryError(
-            "The answer is available, but the response could not be saved to history.",
-          );
+          setHistoryError("The answer is available, but the response could not be saved to history.");
         }
       }
 
@@ -568,9 +491,7 @@ function ResearchApp() {
         {
           id: `${requestId}-error`,
           type: "bot",
-          text:
-            error?.response?.data?.detail ||
-            "Answer not present in knowledge base.",
+          text: error?.response?.data?.detail || "Answer not present in knowledge base.",
         },
       ]);
 
@@ -578,11 +499,8 @@ function ResearchApp() {
         try {
           await addMessage(conversationId, {
             role: "assistant",
-            text:
-              error?.response?.data?.detail ||
-              "Answer not present in knowledge base.",
-            title:
-              queryText.length > 74 ? `${queryText.slice(0, 71)}…` : queryText,
+            text: error?.response?.data?.detail || "Answer not present in knowledge base.",
+            title: queryText.length > 74 ? `${queryText.slice(0, 71)}…` : queryText,
             answerValid: false,
             confidence: 0,
             sources: [],
@@ -621,7 +539,11 @@ function ResearchApp() {
         onDeleteThread={deleteThread}
         historyLoading={historyLoading}
         historyError={historyError}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
+
+      {/* Settings Modal Dialog (opens when Settings is clicked) */}
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
 
       {mobileSidebarOpen && (
         <button
@@ -643,9 +565,7 @@ function ResearchApp() {
           }}
           sidebarOpen={sidebarOpen}
           theme={theme}
-          onToggleTheme={() =>
-            setTheme((value) => (value === "dark" ? "light" : "dark"))
-          }
+          onToggleTheme={() => setTheme((value) => (value === "dark" ? "light" : "dark"))}
         />
 
         {conversationLoading && (

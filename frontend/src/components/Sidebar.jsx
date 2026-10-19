@@ -22,6 +22,7 @@ function Sidebar({
   onDeleteThread,
   historyLoading = false,
   historyError = "",
+  onOpenSettings,
 }) {
   const sidebarClass = [
     "sidebar",
@@ -67,7 +68,7 @@ function Sidebar({
           <span>Graphs</span>
         </button> */}
 
-        <button className="nav-item" type="button">
+        <button className="nav-item" type="button" onClick={onOpenSettings}>
           <Settings2 size={19} />
           <span>Settings</span>
         </button>
